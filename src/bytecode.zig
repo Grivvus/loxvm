@@ -7,10 +7,10 @@ pub const OpCode = enum(u8) {
 };
 
 pub const Chunk = struct {
-    code: ArrayList(u8),
+    code: ArrayList(OpCode),
 
     pub fn init(allocator: Allocator) Chunk {
-        return Chunk{ .code = ArrayList(u8).init(allocator) };
+        return Chunk{ .code = ArrayList(OpCode).init(allocator) };
     }
 
     pub fn deinit(self: *Chunk) void {
@@ -18,6 +18,6 @@ pub const Chunk = struct {
     }
 
     pub fn write(self: *Chunk, opcode: OpCode) !void {
-        try self.code.append(@intFromEnum(opcode));
+        try self.code.append(opcode);
     }
 };
