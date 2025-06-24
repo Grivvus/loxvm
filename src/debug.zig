@@ -18,6 +18,11 @@ pub fn disassembleChunk(chunk: Chunk, name: []const u8) void {
 
 fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
     print("{d:0>4} ", .{offset});
+    if (offset > 0 and chunk.lines.items[offset] == chunk.lines.items[offset - 1]) {
+        print("   | ", .{});
+    } else {
+        print("{d:0>4} ", .{chunk.lines.items[offset]});
+    }
     const instruction = chunk.code.items[offset];
     return switch (instruction) {
         @intFromEnum(OpCode.OP_RETURN) => simpleInstruction("OP_RETURN", offset),
@@ -39,7 +44,7 @@ fn constantInstruction(name: []const u8, chunk: Chunk, offset: usize) usize {
     print("{s:<16} {d:>4} '", .{ name, constant });
     printValue(chunk.constants.values.items[constant]);
     print("'\n", .{});
-    return offset + 1;
+    return offset + 2;
 }
 
 fn printValue(val: Value) void {

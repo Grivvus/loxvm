@@ -22,8 +22,8 @@ pub fn main() !void {
     defer ch.deinit();
     const index = try ch.addConstant(1.2);
     const index_u8: u8 = @intCast(index);
-    try ch.write(@intFromEnum(OpCodes.OP_CONSTANT));
-    try ch.write(index_u8);
-    try ch.write(@intFromEnum(OpCodes.OP_RETURN));
+    try ch.write(@intFromEnum(OpCodes.OP_CONSTANT), 123);
+    try ch.write(index_u8, 123);
+    try ch.write(@intFromEnum(OpCodes.OP_RETURN), 123);
     debug.disassembleChunk(ch, "test chunk");
 }
