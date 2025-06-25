@@ -29,8 +29,8 @@ pub const VM = struct {
     ip: [*]u8,
     stack: ArrayList(Value),
 
-    pub fn init(chunk: *Chunk, allocator: Allocator) VM {
-        var vm = VM{ .chunk = chunk, .ip = chunk.code.items.ptr, .stack = ArrayList(Value).init(allocator) };
+    pub fn init(allocator: Allocator) VM {
+        var vm = VM{ .chunk = undefined, .ip = undefined, .stack = ArrayList(Value).init(allocator) };
         vm.resetStack();
         return vm;
     }
@@ -51,11 +51,10 @@ pub const VM = struct {
         return val.?;
     }
 
-    pub fn interpret(vm: *VM, chunk: *Chunk) InterpreterResult {
-        vm.chunk = chunk;
-        vm.ip = chunk.code.items.ptr;
-        const res = vm.run() catch InterpreterResult.INTERPRET_RUNTIME_ERROR;
-        return res;
+    pub fn interpret(vm: *VM, source: []const u8) InterpreterResult {
+        _ = vm;
+        _ = source;
+        return InterpreterResult.INTERPRET_OK;
     }
 
     fn run(vm: *VM) !InterpreterResult {
