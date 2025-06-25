@@ -16,7 +16,7 @@ pub fn disassembleChunk(chunk: Chunk, name: []const u8) void {
     }
 }
 
-fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
+pub fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
     print("{d:0>4} ", .{offset});
     if (offset > 0 and chunk.lines.items[offset] == chunk.lines.items[offset - 1]) {
         print("   | ", .{});
@@ -27,6 +27,11 @@ fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
     return switch (instruction) {
         @intFromEnum(OpCode.OP_RETURN) => simpleInstruction("OP_RETURN", offset),
         @intFromEnum(OpCode.OP_CONSTANT) => constantInstruction("OP_CONSTANT", chunk, offset),
+        @intFromEnum(OpCode.OP_NEGATE) => simpleInstruction("OP_NEGATE", offset),
+        @intFromEnum(OpCode.OP_ADD) => simpleInstruction("OP_ADD", offset),
+        @intFromEnum(OpCode.OP_SUBSTRUCT) => simpleInstruction("OP_SUBSTRUCT", offset),
+        @intFromEnum(OpCode.OP_MULTIPLY) => simpleInstruction("OP_MULTIPLY", offset),
+        @intFromEnum(OpCode.OP_DIVIDE) => simpleInstruction("OP_DIVIDE", offset),
         else => {
             print("Unkown opcode {d}\n", .{instruction});
             return offset + 1;
@@ -47,6 +52,6 @@ fn constantInstruction(name: []const u8, chunk: Chunk, offset: usize) usize {
     return offset + 2;
 }
 
-fn printValue(val: Value) void {
+pub fn printValue(val: Value) void {
     print("{any}", .{val});
 }

@@ -2,6 +2,7 @@ const std = @import("std");
 
 const bytecode = @import("bytecode.zig");
 const debug = @import("debug.zig");
+const VM = @import("vm.zig").VM;
 const Chunk = bytecode.Chunk;
 const OpCodes = bytecode.OpCode;
 
@@ -20,10 +21,30 @@ pub fn main() !void {
     const allocator = gpa.allocator();
     var ch = Chunk.init(allocator);
     defer ch.deinit();
-    const index = try ch.addConstant(1.2);
-    const index_u8: u8 = @intCast(index);
+
+    var index = try ch.addConstant(1.2);
+    var index_u8: u8 = @intCast(index);
     try ch.write(@intFromEnum(OpCodes.OP_CONSTANT), 123);
     try ch.write(index_u8, 123);
+    try ch.write(@intFromEnum(OpCodes.OP_NEGATE), 123);
+
+    index = try ch.addConstant(5.5);
+    index_u8 = @intCast(index);
+    try ch.write(@intFromEnum(OpCodes.OP_CONSTANT), 123);
+    try ch.write(index_u8, 123);
+    index = try ch.addConstant(6.5);
+    index_u8 = @intCast(index);
+    try ch.write(@intFromEnum(OpCodes.OP_CONSTANT), 123);
+    try ch.write(index_u8, 123);
+    try ch.write(@intFromEnum(OpCodes.OP_ADD), 123);
+
     try ch.write(@intFromEnum(OpCodes.OP_RETURN), 123);
-    debug.disassembleChunk(ch, "test chunk");
+
+    var vm = VM.init(&ch);
+    const res = vm.interpret(&ch);
+    if (res == .INTERPRET_OK) {
+        std.debug.print("Interpreted succesfully\n", .{});
+    } else {
+        std.debug.print("Unexpected error while interpreting\n", .{});
+    }
 }

@@ -6,8 +6,14 @@ const value_mod = @import("value.zig");
 const Value = value_mod.Value;
 const ValueArray = value_mod.ValueArray;
 
+/// todo: implement OP_CONSTANT_LONG instruction
 pub const OpCode = enum(u8) {
     OP_RETURN,
+    OP_NEGATE,
+    OP_ADD,
+    OP_SUBSTRUCT,
+    OP_DIVIDE,
+    OP_MULTIPLY,
     OP_CONSTANT,
 };
 
