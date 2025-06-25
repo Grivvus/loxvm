@@ -40,7 +40,8 @@ pub fn main() !void {
 
     try ch.write(@intFromEnum(OpCodes.OP_RETURN), 123);
 
-    var vm = VM.init(&ch);
+    var vm = VM.init(&ch, allocator);
+    defer vm.deinit();
     const res = vm.interpret(&ch);
     if (res == .INTERPRET_OK) {
         std.debug.print("Interpreted succesfully\n", .{});

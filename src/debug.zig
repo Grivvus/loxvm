@@ -55,3 +55,14 @@ fn constantInstruction(name: []const u8, chunk: Chunk, offset: usize) usize {
 pub fn printValue(val: Value) void {
     print("{any}", .{val});
 }
+
+pub fn printStack(stack: []Value) void {
+    print("   stack   \n", .{});
+    for (stack, 0..) |val, i| {
+        printValue(val);
+        print(" on index {d}", .{i});
+        print("  ", .{});
+    }
+    print("\n", .{});
+    print("    stack end    \n", .{});
+}

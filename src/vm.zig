@@ -1,5 +1,6 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
+const Allocator = std.mem.Allocator;
 const bytecode = @import("bytecode.zig");
 const value_mod = @import("value.zig");
 const debug = @import("debug.zig");
@@ -26,45 +27,45 @@ pub const BinOp = enum {
 pub const VM = struct {
     chunk: *Chunk,
     ip: [*]u8,
-    stack: [STACK_MAX_SIZE]Value,
-    stack_top: [*]Value,
+    stack: ArrayList(Value),
 
-    pub fn init(chunk: *Chunk) VM {
-        var vm = VM{ .chunk = chunk, .ip = chunk.code.items.ptr, .stack = undefined, .stack_top = undefined };
+    pub fn init(chunk: *Chunk, allocator: Allocator) VM {
+        var vm = VM{ .chunk = chunk, .ip = chunk.code.items.ptr, .stack = ArrayList(Value).init(allocator) };
         vm.resetStack();
         return vm;
     }
     pub fn deinit(self: *VM) void {
-        _ = self;
+        self.stack.deinit();
     }
     fn resetStack(self: *VM) void {
-        self.stack_top = &self.stack;
+        self.stack.clearRetainingCapacity();
     }
-    fn push(self: *VM, val: Value) void {
-        self.stack_top[0] = val;
-        self.stack_top += 1;
+    fn push(self: *VM, val: Value) !void {
+        try self.stack.append(val);
     }
     fn pop(self: *VM) Value {
-        self.stack_top -= 1;
-        return self.stack_top[0];
+        const val = self.stack.pop();
+        if (val == null) {
+            @panic("Poped from empty stack");
+        }
+        return val.?;
     }
 
     pub fn interpret(vm: *VM, chunk: *Chunk) InterpreterResult {
         vm.chunk = chunk;
         vm.ip = chunk.code.items.ptr;
-        return vm.run();
+        const res = vm.run() catch InterpreterResult.INTERPRET_RUNTIME_ERROR;
+        return res;
     }
 
-    fn run(vm: *VM) InterpreterResult {
+    fn run(vm: *VM) !InterpreterResult {
         while (true) {
             if (build_mode == .Debug) {
                 std.debug.print("        ", .{});
-                var slot = &vm.stack;
-                while (slot - vm.stack_top < 0) {
+                for (vm.stack.items) |slot| {
                     std.debug.print("[ ", .{});
-                    debug.printValue(*slot);
+                    debug.printValue(slot);
                     std.debug.print(" ]", .{});
-                    slot += 1;
                 }
                 std.debug.print("\n", .{});
                 _ = debug.disassembleInstruction(vm.chunk.*, vm.ip - vm.chunk.code.items.ptr);
@@ -79,15 +80,15 @@ pub const VM = struct {
                 },
                 @intFromEnum(OpCode.OP_CONSTANT) => {
                     const constant = readConstant(vm);
-                    vm.push(constant);
+                    try vm.push(constant);
                     // debug.printValue(value);
                     // std.debug.print("\n", .{});
                 },
-                @intFromEnum(OpCode.OP_NEGATE) => vm.push(-vm.pop()),
-                @intFromEnum(OpCode.OP_ADD) => vm.binOp(BinOp.PLUS),
-                @intFromEnum(OpCode.OP_SUBSTRUCT) => vm.binOp(BinOp.MINUS),
-                @intFromEnum(OpCode.OP_MULTIPLY) => vm.binOp(BinOp.MULTIPLY),
-                @intFromEnum(OpCode.OP_DIVIDE) => vm.binOp(BinOp.DIVIDE),
+                @intFromEnum(OpCode.OP_NEGATE) => try vm.push(-vm.pop()),
+                @intFromEnum(OpCode.OP_ADD) => try vm.binOp(BinOp.PLUS),
+                @intFromEnum(OpCode.OP_SUBSTRUCT) => try vm.binOp(BinOp.MINUS),
+                @intFromEnum(OpCode.OP_MULTIPLY) => try vm.binOp(BinOp.MULTIPLY),
+                @intFromEnum(OpCode.OP_DIVIDE) => try vm.binOp(BinOp.DIVIDE),
                 else => {
                     std.debug.print("Unkown instruction {d}\n", .{instruction});
                     @panic("Error");
@@ -106,14 +107,14 @@ pub const VM = struct {
         return vm.chunk.constants.values.items[readByte(vm)];
     }
 
-    inline fn binOp(vm: *VM, comptime operator: BinOp) void {
+    inline fn binOp(vm: *VM, comptime operator: BinOp) !void {
         const op_right = vm.pop();
         const op_left = vm.pop();
         switch (operator) {
-            BinOp.PLUS => vm.push(op_left + op_right),
-            BinOp.MINUS => vm.push(op_left - op_right),
-            BinOp.MULTIPLY => vm.push(op_left * op_right),
-            BinOp.DIVIDE => vm.push(op_left / op_right),
+            BinOp.PLUS => try vm.push(op_left + op_right),
+            BinOp.MINUS => try vm.push(op_left - op_right),
+            BinOp.MULTIPLY => try vm.push(op_left * op_right),
+            BinOp.DIVIDE => try vm.push(op_left / op_right),
         }
     }
 };
