@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 const bytecode = @import("bytecode.zig");
 const value_mod = @import("value.zig");
 const debug = @import("debug.zig");
+const compiler = @import("compiler.zig");
 const Chunk = bytecode.Chunk;
 const OpCode = bytecode.OpCode;
 const Value = value_mod.Value;
@@ -53,7 +54,7 @@ pub const VM = struct {
 
     pub fn interpret(vm: *VM, source: []const u8) InterpreterResult {
         _ = vm;
-        _ = source;
+        compiler.compile(source) catch return InterpreterResult.INTERPRET_COMPILE_ERROR;
         return InterpreterResult.INTERPRET_OK;
     }
 

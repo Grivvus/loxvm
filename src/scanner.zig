@@ -82,6 +82,9 @@ pub const Scanner = struct {
             return Token.init(.TOKEN_EOF, "", self.current_line);
         }
         const c = self.advance();
+        if (isDigit(c)) {
+            return self.number();
+        }
         return switch (c) {
             '(' => return Token.init(.TOKEN_LEFT_PAREN, "(", self.current_line),
             ')' => return Token.init(.TOKEN_RIGHT_PAREN, ")", self.current_line),
@@ -122,13 +125,43 @@ pub const Scanner = struct {
                     return Token.init(.TOKEN_GREATER, ">", self.current_line);
                 }
             },
-            '\n' => {
-                self.current_line += 1;
-                _ = self.advance();
-                @panic("not implemented");
-            },
+            '"' => return self.string(),
             else => return Token.init(.TOKEN_ERROR, "Unexpected character", self.current_line),
         };
+    }
+
+    fn string(self: *Scanner) Token {
+        var buffer: [10_000]u8 = undefined;
+        var i = 0;
+        while (self.peek() != '"' and !self.isAtEnd()) {
+            if (self.peek() == '\n') {
+                self.current_line += 1;
+            }
+            buffer[i] = self.advance();
+            i += 1;
+        }
+        if (self.isAtEnd()) {
+            return Token.init(.TOKEN_ERROR, "Unterminated string", self.current_line);
+        }
+        return Token.init(.TOKEN_STRING, buffer[0..i], self.current_line);
+    }
+
+    fn number(self: *Scanner) Token {
+        var buffer: [20]u8 = undefined;
+        var i = 0;
+        while (isDigit(self.peek())) {
+            buffer[i] = self.advance();
+            i += 1;
+        }
+        if (self.peek() == '.' and isDigit(self.peekNext())) {
+            buffer[i] = self.advance();
+            i += 1;
+            while (isDigit(self.peek)) {
+                buffer[i] = self.advance();
+                i += 1;
+            }
+        }
+        return Token.init(.TOKEN_NUMBER, buffer[0..i], self.current_line);
     }
 
     fn isAtEnd(self: *Scanner) bool {
@@ -156,7 +189,17 @@ pub const Scanner = struct {
             switch (c) {
                 ' ', '\r', '\t' => {
                     self.advance();
-                    break;
+                },
+                '\n' => {
+                    self.current_line += 1;
+                    _ = self.advance();
+                },
+                '/' => {
+                    if (self.peekNext() == '/') {
+                        while (self.peek() != '\n' and !self.isAtEnd()) {
+                            self.advance();
+                        }
+                    }
                 },
                 else => return,
             }
@@ -165,4 +208,14 @@ pub const Scanner = struct {
     fn peek(self: *Scanner) u8 {
         return self.source[self.current_index];
     }
+    fn peekNext(self: *Scanner) u8 {
+        if (self.isAtEnd()) {
+            return 0;
+        }
+        return self.source[self.current_index + 1];
+    }
 };
+
+fn isDigit(c: u8) bool {
+    return c >= '0' and c <= '9';
+}
