@@ -1,4 +1,6 @@
 const std = @import("std");
+const Map = std.StringHashMap;
+var arena = @import("main.zig").arena;
 
 pub const TokenType = enum {
     // single-character tokens
@@ -48,6 +50,25 @@ pub const TokenType = enum {
     TOKEN_EOF,
 };
 
+fn populateMap(keywords: *Map(TokenType)) !void {
+    try keywords.put("and", .TOKEN_AND);
+    try keywords.put("class", .TOKEN_CLASS);
+    try keywords.put("else", .TOKEN_ELSE);
+    try keywords.put("false", .TOKEN_FALSE);
+    try keywords.put("for", .TOKEN_FOR);
+    try keywords.put("fun", .TOKEN_FUN);
+    try keywords.put("if", .TOKEN_IF);
+    try keywords.put("nil", .TOKEN_NIL);
+    try keywords.put("or", .TOKEN_OR);
+    try keywords.put("print", .TOKEN_PRINT);
+    try keywords.put("return", .TOKEN_RETURN);
+    try keywords.put("super", .TOKEN_SUPER);
+    try keywords.put("this", .TOKEN_THIS);
+    try keywords.put("true", .TOKEN_TRUE);
+    try keywords.put("var", .TOKEN_VAR);
+    try keywords.put("while", .TOKEN_WHILE);
+}
+
 pub const Token = struct {
     type_: TokenType,
     lexeme: []const u8,
@@ -65,12 +86,16 @@ pub const Scanner = struct {
     source: []const u8,
     current_index: i32,
     current_line: i32,
+    keywords: Map(TokenType),
 
-    pub fn init(source: []const u8) Scanner {
+    pub fn init(source: []const u8, allocator: std.mem.Allocator) !Scanner {
+        var keywords = Map(TokenType).init(allocator);
+        try populateMap(&keywords);
         return Scanner{
             .source = source,
             .current_index = 0,
             .current_line = 1,
+            .keywords = keywords,
         };
     }
     pub fn deinit(self: *Scanner) void {
@@ -131,37 +156,33 @@ pub const Scanner = struct {
     }
 
     fn string(self: *Scanner) Token {
-        var buffer: [10_000]u8 = undefined;
-        var i = 0;
+        const start = self.current_index;
         while (self.peek() != '"' and !self.isAtEnd()) {
             if (self.peek() == '\n') {
                 self.current_line += 1;
             }
-            buffer[i] = self.advance();
-            i += 1;
+            _ = self.advance();
         }
         if (self.isAtEnd()) {
             return Token.init(.TOKEN_ERROR, "Unterminated string", self.current_line);
         }
-        return Token.init(.TOKEN_STRING, buffer[0..i], self.current_line);
+        const end = self.current_index;
+        return Token.init(.TOKEN_STRING, self.source[start .. end + 1], self.current_line);
     }
 
     fn number(self: *Scanner) Token {
-        var buffer: [20]u8 = undefined;
-        var i = 0;
+        const start = self.current_index;
         while (isDigit(self.peek())) {
-            buffer[i] = self.advance();
-            i += 1;
+            _ = self.advance();
         }
         if (self.peek() == '.' and isDigit(self.peekNext())) {
-            buffer[i] = self.advance();
-            i += 1;
+            _ = self.advance();
             while (isDigit(self.peek)) {
-                buffer[i] = self.advance();
-                i += 1;
+                _ = self.advance();
             }
         }
-        return Token.init(.TOKEN_NUMBER, buffer[0..i], self.current_line);
+        const end = self.current_index;
+        return Token.init(.TOKEN_NUMBER, self.source[start .. end + 1], self.current_line);
     }
 
     fn isAtEnd(self: *Scanner) bool {
@@ -205,6 +226,17 @@ pub const Scanner = struct {
             }
         }
     }
+
+    fn identifier(self: *Scanner) Token {
+        const start = self.current_index;
+        while (isAlpha(self.peek()) or isDigit(self.peek())) {
+            _ = advance(self);
+        }
+        const end = self.current_index;
+        const token_type = self.keywords.get(self.source[start .. end + 1]) orelse TokenType.TOKEN_IDENTIFIER;
+        return Token.init(token_type, self.source[start .. end + 1]);
+    }
+
     fn peek(self: *Scanner) u8 {
         return self.source[self.current_index];
     }
@@ -218,4 +250,8 @@ pub const Scanner = struct {
 
 fn isDigit(c: u8) bool {
     return c >= '0' and c <= '9';
+}
+
+fn isAlpha(c: u8) bool {
+    return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or c == '_';
 }

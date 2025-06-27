@@ -29,9 +29,10 @@ pub const VM = struct {
     chunk: *Chunk,
     ip: [*]u8,
     stack: ArrayList(Value),
+    alloc: Allocator,
 
     pub fn init(allocator: Allocator) VM {
-        var vm = VM{ .chunk = undefined, .ip = undefined, .stack = ArrayList(Value).init(allocator) };
+        var vm = VM{ .chunk = undefined, .ip = undefined, .stack = ArrayList(Value).init(allocator), .alloc = allocator };
         vm.resetStack();
         return vm;
     }
@@ -53,8 +54,7 @@ pub const VM = struct {
     }
 
     pub fn interpret(vm: *VM, source: []const u8) InterpreterResult {
-        _ = vm;
-        compiler.compile(source) catch return InterpreterResult.INTERPRET_COMPILE_ERROR;
+        compiler.compile(source, vm.alloc) catch return InterpreterResult.INTERPRET_COMPILE_ERROR;
         return InterpreterResult.INTERPRET_OK;
     }
 

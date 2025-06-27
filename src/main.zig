@@ -10,21 +10,12 @@ const OpCodes = bytecode.OpCode;
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
-    var gpa = std.heap.GeneralPurposeAllocator(.{}).init;
-    defer {
-        const check = gpa.deinit();
-        if (check == .leak) {
-            @panic("Memory leak detected\n");
-        }
-    }
-
     const arena_alloc = arena.allocator();
-    const allocator = gpa.allocator();
 
     const args = try std.process.argsAlloc(arena_alloc);
     defer std.process.argsFree(arena_alloc, args);
 
-    var vm = VM.init(allocator);
+    var vm = VM.init(arena_alloc);
     defer vm.deinit();
     if (args.len == 1) {
         try repl(&vm);
