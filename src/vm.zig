@@ -54,8 +54,11 @@ pub const VM = struct {
     }
 
     pub fn interpret(vm: *VM, source: []const u8) InterpreterResult {
-        compiler.compile(source, vm.alloc) catch return InterpreterResult.INTERPRET_COMPILE_ERROR;
-        return InterpreterResult.INTERPRET_OK;
+        var chunk = Chunk.init(vm.alloc);
+        compiler.compile(source, &chunk, vm.alloc) catch return InterpreterResult.INTERPRET_COMPILE_ERROR;
+        vm.chunk = chunk;
+        vm.ip = vm.chunk.code.items;
+        return vm.run();
     }
 
     fn run(vm: *VM) !InterpreterResult {
