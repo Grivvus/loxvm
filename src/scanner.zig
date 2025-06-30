@@ -72,8 +72,8 @@ fn populateMap(keywords: *Map(TokenType)) !void {
 pub const Token = struct {
     type_: TokenType,
     lexeme: []const u8,
-    line: i32,
-    fn init(type_: TokenType, lexeme: []const u8, line: i32) Token {
+    line: usize,
+    fn init(type_: TokenType, lexeme: []const u8, line: usize) Token {
         return Token{
             .type_ = type_,
             .lexeme = lexeme,
@@ -84,8 +84,8 @@ pub const Token = struct {
 
 pub const Scanner = struct {
     source: []const u8,
-    current_index: i32,
-    current_line: i32,
+    current_index: usize,
+    current_line: usize,
     keywords: Map(TokenType),
 
     pub fn init(source: []const u8, allocator: std.mem.Allocator) !Scanner {
@@ -177,7 +177,7 @@ pub const Scanner = struct {
         }
         if (self.peek() == '.' and isDigit(self.peekNext())) {
             _ = self.advance();
-            while (isDigit(self.peek)) {
+            while (isDigit(self.peek())) {
                 _ = self.advance();
             }
         }
