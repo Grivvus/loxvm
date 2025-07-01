@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 
 const bytecode = @import("bytecode.zig");
@@ -35,7 +36,7 @@ fn repl(vm: *VM) !void {
         _ = stdin.readAll(&line_buffer) catch @panic("Buffer out");
         std.debug.print("{s}\n", .{line_buffer});
         std.debug.print("\n", .{});
-        const result = vm.interpret(&line_buffer);
+        const result = try vm.interpret(&line_buffer);
         if (result != .INTERPRET_OK) {
             std.debug.print("Interpreter error\n", .{});
             @panic("");
@@ -46,13 +47,15 @@ fn repl(vm: *VM) !void {
 fn runFile(vm: *VM, filename: []const u8, allocator: Allocator) !void {
     const file = try std.fs.cwd().openFile(filename, .{});
     defer file.close();
-    const source = try file.readToEndAlloc(allocator, 1 >> 20);
-    std.debug.print("{s}", .{source});
-    const result = vm.interpret(source);
+    const source = try file.readToEndAlloc(allocator, 100_000);
+    if (builtin.mode == .Debug) {
+        std.debug.print("{s}", .{source});
+    }
+    const result = try vm.interpret(source);
     if (result == .INTERPRET_OK) {
         std.debug.print("Interpret without errors\n", .{});
     } else {
-        std.debug.print("Interpreter error\n", .{});
+        std.debug.print("Interpreter error {any}\n", .{result});
         @panic("");
     }
 }

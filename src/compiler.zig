@@ -291,10 +291,10 @@ fn number(parser: *Parser) !void {
 }
 
 fn unary(parser: *Parser) !void {
+    const operator_type = parser.prev.type_;
+
     try parsePrecedence(.UNARY, parser);
 
-    const operator_type = parser.prev.type_;
-    try expression(parser);
     switch (operator_type) {
         .TOKEN_MINUS => try emitOpcode(@intFromEnum(OpCode.OP_NEGATE), parser),
         else => unreachable,

@@ -86,6 +86,7 @@ pub const Scanner = struct {
     source: []const u8,
     current_index: usize,
     current_line: usize,
+    allocator: std.mem.Allocator,
     keywords: Map(TokenType),
 
     pub fn init(source: []const u8, allocator: std.mem.Allocator) !Scanner {
@@ -95,6 +96,7 @@ pub const Scanner = struct {
             .source = source,
             .current_index = 0,
             .current_line = 1,
+            .allocator = allocator,
             .keywords = keywords,
         };
     }
@@ -103,6 +105,7 @@ pub const Scanner = struct {
     }
 
     pub fn scanToken(self: *Scanner) Token {
+        self.skipWhitespace();
         if (self.isAtEnd()) {
             return Token.init(.TOKEN_EOF, "", self.current_line);
         }
@@ -151,12 +154,12 @@ pub const Scanner = struct {
                 }
             },
             '"' => return self.string(),
-            else => return Token.init(.TOKEN_ERROR, "Unexpected character", self.current_line),
+            else => return Token.init(.TOKEN_ERROR, std.fmt.allocPrint(self.allocator, "Unexpected character '{c}'", .{self.source[self.current_index - 1]}) catch unreachable, self.current_line),
         };
     }
 
     fn string(self: *Scanner) Token {
-        const start = self.current_index;
+        const start = self.current_index - 1;
         while (self.peek() != '"' and !self.isAtEnd()) {
             if (self.peek() == '\n') {
                 self.current_line += 1;
@@ -167,22 +170,22 @@ pub const Scanner = struct {
             return Token.init(.TOKEN_ERROR, "Unterminated string", self.current_line);
         }
         const end = self.current_index;
-        return Token.init(.TOKEN_STRING, self.source[start .. end + 1], self.current_line);
+        return Token.init(.TOKEN_STRING, self.source[start..end], self.current_line);
     }
 
     fn number(self: *Scanner) Token {
-        const start = self.current_index;
-        while (isDigit(self.peek())) {
+        const start = self.current_index - 1;
+        while (!self.isAtEnd() and isDigit(self.peek())) {
             _ = self.advance();
         }
-        if (self.peek() == '.' and isDigit(self.peekNext())) {
+        if (!self.isAtEnd() and self.peek() == '.' and isDigit(self.peekNext())) {
             _ = self.advance();
-            while (isDigit(self.peek())) {
+            while (!self.isAtEnd() and isDigit(self.peek())) {
                 _ = self.advance();
             }
         }
         const end = self.current_index;
-        return Token.init(.TOKEN_NUMBER, self.source[start .. end + 1], self.current_line);
+        return Token.init(.TOKEN_NUMBER, self.source[start..end], self.current_line);
     }
 
     fn isAtEnd(self: *Scanner) bool {
@@ -205,11 +208,11 @@ pub const Scanner = struct {
         return true;
     }
     fn skipWhitespace(self: *Scanner) void {
-        while (true) {
+        while (!self.isAtEnd()) {
             const c = self.peek();
             switch (c) {
                 ' ', '\r', '\t' => {
-                    self.advance();
+                    _ = self.advance();
                 },
                 '\n' => {
                     self.current_line += 1;
@@ -218,7 +221,7 @@ pub const Scanner = struct {
                 '/' => {
                     if (self.peekNext() == '/') {
                         while (self.peek() != '\n' and !self.isAtEnd()) {
-                            self.advance();
+                            _ = self.advance();
                         }
                     }
                 },
@@ -237,6 +240,9 @@ pub const Scanner = struct {
         return Token.init(token_type, self.source[start .. end + 1]);
     }
 
+    fn peekPrev(self: *Scanner) u8 {
+        return self.source[self.current_index - 1];
+    }
     fn peek(self: *Scanner) u8 {
         return self.source[self.current_index];
     }
