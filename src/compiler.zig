@@ -23,7 +23,7 @@ const Parser = struct {
         self.prev = self.current;
         while (true) {
             self.current = self.scanner.scanToken();
-            if (self.current.type_ != .TOKEN_ERROR) {
+            if (self.current.type_ != .ERROR) {
                 break;
             }
             errorAt(self.current, self.current.lexeme);
@@ -62,202 +62,202 @@ const ParseRule = struct {
 var rules: [256]ParseRule = undefined;
 fn fillUpRules() void {
     const tt = TokenType;
-    rules[@intFromEnum(tt.TOKEN_LEFT_PAREN)] = ParseRule{
+    rules[@intFromEnum(tt.LEFT_PAREN)] = ParseRule{
         .prefix = grouping,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_RIGHT_PAREN)] = ParseRule{
+    rules[@intFromEnum(tt.RIGHT_PAREN)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_LEFT_BRACE)] = ParseRule{
+    rules[@intFromEnum(tt.LEFT_BRACE)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_RIGHT_BRACE)] = ParseRule{
+    rules[@intFromEnum(tt.RIGHT_BRACE)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_COMMA)] = ParseRule{
+    rules[@intFromEnum(tt.COMMA)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_DOT)] = ParseRule{
+    rules[@intFromEnum(tt.DOT)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_MINUS)] = ParseRule{
+    rules[@intFromEnum(tt.MINUS)] = ParseRule{
         .prefix = unary,
         .infix = binary,
         .precedence = .TERM,
     };
-    rules[@intFromEnum(tt.TOKEN_PLUS)] = ParseRule{
+    rules[@intFromEnum(tt.PLUS)] = ParseRule{
         .prefix = null,
         .infix = binary,
         .precedence = .TERM,
     };
-    rules[@intFromEnum(tt.TOKEN_SEMICOLON)] = ParseRule{
+    rules[@intFromEnum(tt.SEMICOLON)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_SLASH)] = ParseRule{
+    rules[@intFromEnum(tt.SLASH)] = ParseRule{
         .prefix = null,
         .infix = binary,
         .precedence = .FACTOR,
     };
-    rules[@intFromEnum(tt.TOKEN_STAR)] = ParseRule{
+    rules[@intFromEnum(tt.STAR)] = ParseRule{
         .prefix = null,
         .infix = binary,
         .precedence = .FACTOR,
     };
-    rules[@intFromEnum(tt.TOKEN_BANG)] = ParseRule{
+    rules[@intFromEnum(tt.BANG)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_BANG_EQUAL)] = ParseRule{
+    rules[@intFromEnum(tt.BANG_EQUAL)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_EQUAL)] = ParseRule{
+    rules[@intFromEnum(tt.EQUAL)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_EQUAL_EQUAL)] = ParseRule{
+    rules[@intFromEnum(tt.EQUAL_EQUAL)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_GREATER)] = ParseRule{
+    rules[@intFromEnum(tt.GREATER)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_GREATER_EQUAL)] = ParseRule{
+    rules[@intFromEnum(tt.GREATER_EQUAL)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_LESS)] = ParseRule{
+    rules[@intFromEnum(tt.LESS)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_LESS_EQUAL)] = ParseRule{
+    rules[@intFromEnum(tt.LESS_EQUAL)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_IDENTIFIER)] = ParseRule{
+    rules[@intFromEnum(tt.IDENTIFIER)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_STRING)] = ParseRule{
+    rules[@intFromEnum(tt.STRING)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_NUMBER)] = ParseRule{
+    rules[@intFromEnum(tt.NUMBER)] = ParseRule{
         .prefix = number,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_AND)] = ParseRule{
+    rules[@intFromEnum(tt.AND)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_CLASS)] = ParseRule{
+    rules[@intFromEnum(tt.CLASS)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_ELSE)] = ParseRule{
+    rules[@intFromEnum(tt.ELSE)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_FALSE)] = ParseRule{
+    rules[@intFromEnum(tt.FALSE)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_FOR)] = ParseRule{
+    rules[@intFromEnum(tt.FOR)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_FUN)] = ParseRule{
+    rules[@intFromEnum(tt.FUN)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_IF)] = ParseRule{
+    rules[@intFromEnum(tt.IF)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_NIL)] = ParseRule{
+    rules[@intFromEnum(tt.NIL)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_OR)] = ParseRule{
+    rules[@intFromEnum(tt.OR)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_PRINT)] = ParseRule{
+    rules[@intFromEnum(tt.PRINT)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_RETURN)] = ParseRule{
+    rules[@intFromEnum(tt.RETURN)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_SUPER)] = ParseRule{
+    rules[@intFromEnum(tt.SUPER)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_THIS)] = ParseRule{
+    rules[@intFromEnum(tt.THIS)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_TRUE)] = ParseRule{
+    rules[@intFromEnum(tt.TRUE)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_VAR)] = ParseRule{
+    rules[@intFromEnum(tt.VAR)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_WHILE)] = ParseRule{
+    rules[@intFromEnum(tt.WHILE)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_ERROR)] = ParseRule{
+    rules[@intFromEnum(tt.ERROR)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
     };
-    rules[@intFromEnum(tt.TOKEN_EOF)] = ParseRule{
+    rules[@intFromEnum(tt.EOF)] = ParseRule{
         .prefix = null,
         .infix = null,
         .precedence = .NONE,
@@ -277,7 +277,7 @@ pub fn compile(source: []const u8, chunk: *Chunk, allocator: std.mem.Allocator) 
     parser.advance();
     try expression(&parser);
 
-    parser.consume(.TOKEN_EOF, "expect end of expression");
+    parser.consume(.EOF, "expect end of expression");
     try endCompiler(&parser);
 }
 
@@ -296,7 +296,7 @@ fn unary(parser: *Parser) !void {
     try parsePrecedence(.UNARY, parser);
 
     switch (operator_type) {
-        .TOKEN_MINUS => try emitOpcode(@intFromEnum(OpCode.OP_NEGATE), parser),
+        .MINUS => try emitOpcode(@intFromEnum(OpCode.OP_NEGATE), parser),
         else => unreachable,
     }
 }
@@ -307,10 +307,10 @@ fn binary(parser: *Parser) !void {
     try parsePrecedence(rule.precedence, parser);
 
     switch (operator_type) {
-        .TOKEN_PLUS => try emitOpcode(@intFromEnum(OpCode.OP_ADD), parser),
-        .TOKEN_MINUS => try emitOpcode(@intFromEnum(OpCode.OP_SUBSTRUCT), parser),
-        .TOKEN_STAR => try emitOpcode(@intFromEnum(OpCode.OP_MULTIPLY), parser),
-        .TOKEN_SLASH => try emitOpcode(@intFromEnum(OpCode.OP_DIVIDE), parser),
+        .PLUS => try emitOpcode(@intFromEnum(OpCode.OP_ADD), parser),
+        .MINUS => try emitOpcode(@intFromEnum(OpCode.OP_SUBSTRUCT), parser),
+        .STAR => try emitOpcode(@intFromEnum(OpCode.OP_MULTIPLY), parser),
+        .SLASH => try emitOpcode(@intFromEnum(OpCode.OP_DIVIDE), parser),
         else => unreachable,
     }
 }
@@ -333,7 +333,7 @@ fn parsePrecedence(precedence: Precedence, parser: *Parser) !void {
 
 fn grouping(parser: *Parser) !void {
     try expression(parser);
-    parser.consume(.TOKEN_RIGHT_PAREN, "expect ')' after expression");
+    parser.consume(.RIGHT_PAREN, "expect ')' after expression");
 }
 
 fn endCompiler(parser: *Parser) !void {
@@ -370,9 +370,9 @@ fn currentChunk() *Chunk {
 
 pub fn errorAt(tok: Token, msg: []const u8) noreturn {
     std.debug.print("[line {d}] Error", .{tok.line});
-    if (tok.type_ == .TOKEN_EOF) {
+    if (tok.type_ == .EOF) {
         std.debug.print(" at end", .{});
-    } else if (tok.type_ != .TOKEN_ERROR) {
+    } else if (tok.type_ != .ERROR) {
         std.debug.print(" at {s}", .{tok.lexeme});
     }
     std.debug.print(": {s}\n", .{msg});

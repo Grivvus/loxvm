@@ -3,50 +3,50 @@ var arena = @import("main.zig").arena;
 
 pub const TokenType = enum {
     // single-character tokens
-    TOKEN_LEFT_PAREN,
-    TOKEN_RIGHT_PAREN,
-    TOKEN_LEFT_BRACE,
-    TOKEN_RIGHT_BRACE,
-    TOKEN_COMMA,
-    TOKEN_DOT,
-    TOKEN_MINUS,
-    TOKEN_PLUS,
-    TOKEN_SEMICOLON,
-    TOKEN_SLASH,
-    TOKEN_STAR,
+    LEFT_PAREN,
+    RIGHT_PAREN,
+    LEFT_BRACE,
+    RIGHT_BRACE,
+    COMMA,
+    DOT,
+    MINUS,
+    PLUS,
+    SEMICOLON,
+    SLASH,
+    STAR,
     // one-or-two character tokens
-    TOKEN_BANG,
-    TOKEN_BANG_EQUAL,
-    TOKEN_EQUAL,
-    TOKEN_EQUAL_EQUAL,
-    TOKEN_GREATER,
-    TOKEN_GREATER_EQUAL,
-    TOKEN_LESS,
-    TOKEN_LESS_EQUAL,
+    BANG,
+    BANG_EQUAL,
+    EQUAL,
+    EQUAL_EQUAL,
+    GREATER,
+    GREATER_EQUAL,
+    LESS,
+    LESS_EQUAL,
     // literals
-    TOKEN_IDENTIFIER,
-    TOKEN_STRING,
-    TOKEN_NUMBER,
+    IDENTIFIER,
+    STRING,
+    NUMBER,
     // keywords
-    TOKEN_AND,
-    TOKEN_CLASS,
-    TOKEN_ELSE,
-    TOKEN_FALSE,
-    TOKEN_FOR,
-    TOKEN_FUN,
-    TOKEN_IF,
-    TOKEN_NIL,
-    TOKEN_OR,
-    TOKEN_PRINT,
-    TOKEN_RETURN,
-    TOKEN_SUPER,
-    TOKEN_THIS,
-    TOKEN_TRUE,
-    TOKEN_VAR,
-    TOKEN_WHILE,
+    AND,
+    CLASS,
+    ELSE,
+    FALSE,
+    FOR,
+    FUN,
+    IF,
+    NIL,
+    OR,
+    PRINT,
+    RETURN,
+    SUPER,
+    THIS,
+    TRUE,
+    VAR,
+    WHILE,
     // other
-    TOKEN_ERROR,
-    TOKEN_EOF,
+    ERROR,
+    EOF,
 };
 
 pub const Token = struct {
@@ -63,22 +63,22 @@ pub const Token = struct {
 };
 
 const keywords = std.StaticStringMap(TokenType).initComptime(.{
-    .{ "and", .TOKEN_AND },
-    .{ "class", .TOKEN_CLASS },
-    .{ "else", .TOKEN_ELSE },
-    .{ "false", .TOKEN_FALSE },
-    .{ "for", .TOKEN_FOR },
-    .{ "fun", .TOKEN_FUN },
-    .{ "if", .TOKEN_IF },
-    .{ "nil", .TOKEN_NIL },
-    .{ "or", .TOKEN_OR },
-    .{ "print", .TOKEN_PRINT },
-    .{ "return", .TOKEN_RETURN },
-    .{ "super", .TOKEN_SUPER },
-    .{ "this", .TOKEN_THIS },
-    .{ "true", .TOKEN_THIS },
-    .{ "var", .TOKEN_VAR },
-    .{ "while", .TOKEN_WHILE },
+    .{ "and", .AND },
+    .{ "class", .CLASS },
+    .{ "else", .ELSE },
+    .{ "false", .FALSE },
+    .{ "for", .FOR },
+    .{ "fun", .FUN },
+    .{ "if", .IF },
+    .{ "nil", .NIL },
+    .{ "or", .OR },
+    .{ "print", .PRINT },
+    .{ "return", .RETURN },
+    .{ "super", .SUPER },
+    .{ "this", .THIS },
+    .{ "true", .THIS },
+    .{ "var", .VAR },
+    .{ "while", .WHILE },
 });
 
 pub const Scanner = struct {
@@ -104,54 +104,54 @@ pub const Scanner = struct {
     pub fn scanToken(self: *Scanner) Token {
         self.skipWhitespace();
         if (self.isAtEnd()) {
-            return Token.init(.TOKEN_EOF, "", self.current_line);
+            return Token.init(.EOF, "", self.current_line);
         }
         const c = self.advance();
         if (isDigit(c)) {
             return self.number();
         }
         return switch (c) {
-            '(' => return Token.init(.TOKEN_LEFT_PAREN, "(", self.current_line),
-            ')' => return Token.init(.TOKEN_RIGHT_PAREN, ")", self.current_line),
-            '{' => return Token.init(.TOKEN_LEFT_BRACE, "{", self.current_line),
-            '}' => return Token.init(.TOKEN_RIGHT_BRACE, "}", self.current_line),
-            ';' => return Token.init(.TOKEN_SEMICOLON, ";", self.current_line),
-            ',' => return Token.init(.TOKEN_COMMA, ",", self.current_line),
-            '.' => return Token.init(.TOKEN_DOT, ".", self.current_line),
-            '-' => return Token.init(.TOKEN_MINUS, "-", self.current_line),
-            '+' => return Token.init(.TOKEN_PLUS, "+", self.current_line),
-            '/' => return Token.init(.TOKEN_SLASH, "/", self.current_line),
-            '*' => return Token.init(.TOKEN_STAR, "*", self.current_line),
+            '(' => return Token.init(.LEFT_PAREN, "(", self.current_line),
+            ')' => return Token.init(.RIGHT_PAREN, ")", self.current_line),
+            '{' => return Token.init(.LEFT_BRACE, "{", self.current_line),
+            '}' => return Token.init(.RIGHT_BRACE, "}", self.current_line),
+            ';' => return Token.init(.SEMICOLON, ";", self.current_line),
+            ',' => return Token.init(.COMMA, ",", self.current_line),
+            '.' => return Token.init(.DOT, ".", self.current_line),
+            '-' => return Token.init(.MINUS, "-", self.current_line),
+            '+' => return Token.init(.PLUS, "+", self.current_line),
+            '/' => return Token.init(.SLASH, "/", self.current_line),
+            '*' => return Token.init(.STAR, "*", self.current_line),
             '!' => return {
                 if (self.match('=')) {
-                    return Token.init(.TOKEN_BANG_EQUAL, "!=", self.current_line);
+                    return Token.init(.BANG_EQUAL, "!=", self.current_line);
                 } else {
-                    return Token.init(.TOKEN_BANG, "!", self.current_line);
+                    return Token.init(.BANG, "!", self.current_line);
                 }
             },
             '=' => return {
                 if (self.match('=')) {
-                    return Token.init(.TOKEN_EQUAL_EQUAL, "==", self.current_line);
+                    return Token.init(.EQUAL_EQUAL, "==", self.current_line);
                 } else {
-                    return Token.init(.TOKEN_EQUAL, "=", self.current_line);
+                    return Token.init(.EQUAL, "=", self.current_line);
                 }
             },
             '<' => return {
                 if (self.match('=')) {
-                    return Token.init(.TOKEN_LESS_EQUAL, "<=", self.current_line);
+                    return Token.init(.LESS_EQUAL, "<=", self.current_line);
                 } else {
-                    return Token.init(.TOKEN_LESS, "<", self.current_line);
+                    return Token.init(.LESS, "<", self.current_line);
                 }
             },
             '>' => return {
                 if (self.match('=')) {
-                    return Token.init(.TOKEN_GREATER_EQUAL, ">=", self.current_line);
+                    return Token.init(.GREATER_EQUAL, ">=", self.current_line);
                 } else {
-                    return Token.init(.TOKEN_GREATER, ">", self.current_line);
+                    return Token.init(.GREATER, ">", self.current_line);
                 }
             },
             '"' => return self.string(),
-            else => return Token.init(.TOKEN_ERROR, std.fmt.allocPrint(self.allocator, "Unexpected character '{c}'", .{self.source[self.current_index - 1]}) catch unreachable, self.current_line),
+            else => return Token.init(.ERROR, std.fmt.allocPrint(self.allocator, "Unexpected character '{c}'", .{self.source[self.current_index - 1]}) catch unreachable, self.current_line),
         };
     }
 
@@ -164,10 +164,10 @@ pub const Scanner = struct {
             _ = self.advance();
         }
         if (self.isAtEnd()) {
-            return Token.init(.TOKEN_ERROR, "Unterminated string", self.current_line);
+            return Token.init(.ERROR, "Unterminated string", self.current_line);
         }
         const end = self.current_index;
-        return Token.init(.TOKEN_STRING, self.source[start..end], self.current_line);
+        return Token.init(.STRING, self.source[start..end], self.current_line);
     }
 
     fn number(self: *Scanner) Token {
@@ -182,7 +182,7 @@ pub const Scanner = struct {
             }
         }
         const end = self.current_index;
-        return Token.init(.TOKEN_NUMBER, self.source[start..end], self.current_line);
+        return Token.init(.NUMBER, self.source[start..end], self.current_line);
     }
 
     fn isAtEnd(self: *Scanner) bool {
@@ -233,7 +233,7 @@ pub const Scanner = struct {
             _ = advance(self);
         }
         const end = self.current_index;
-        const token_type = self.keywords.get(self.source[start .. end + 1]) orelse TokenType.TOKEN_IDENTIFIER;
+        const token_type = self.keywords.get(self.source[start .. end + 1]) orelse TokenType.IDENTIFIER;
         return Token.init(token_type, self.source[start .. end + 1]);
     }
 
