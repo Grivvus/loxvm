@@ -1,5 +1,4 @@
 const std = @import("std");
-const Map = std.StringHashMap;
 var arena = @import("main.zig").arena;
 
 pub const TokenType = enum {
@@ -50,25 +49,6 @@ pub const TokenType = enum {
     TOKEN_EOF,
 };
 
-fn populateMap(keywords: *Map(TokenType)) !void {
-    try keywords.put("and", .TOKEN_AND);
-    try keywords.put("class", .TOKEN_CLASS);
-    try keywords.put("else", .TOKEN_ELSE);
-    try keywords.put("false", .TOKEN_FALSE);
-    try keywords.put("for", .TOKEN_FOR);
-    try keywords.put("fun", .TOKEN_FUN);
-    try keywords.put("if", .TOKEN_IF);
-    try keywords.put("nil", .TOKEN_NIL);
-    try keywords.put("or", .TOKEN_OR);
-    try keywords.put("print", .TOKEN_PRINT);
-    try keywords.put("return", .TOKEN_RETURN);
-    try keywords.put("super", .TOKEN_SUPER);
-    try keywords.put("this", .TOKEN_THIS);
-    try keywords.put("true", .TOKEN_TRUE);
-    try keywords.put("var", .TOKEN_VAR);
-    try keywords.put("while", .TOKEN_WHILE);
-}
-
 pub const Token = struct {
     type_: TokenType,
     lexeme: []const u8,
@@ -82,16 +62,33 @@ pub const Token = struct {
     }
 };
 
+const keywords = std.StaticStringMap(TokenType).initComptime(.{
+    .{ "and", .TOKEN_AND },
+    .{ "class", .TOKEN_CLASS },
+    .{ "else", .TOKEN_ELSE },
+    .{ "false", .TOKEN_FALSE },
+    .{ "for", .TOKEN_FOR },
+    .{ "fun", .TOKEN_FUN },
+    .{ "if", .TOKEN_IF },
+    .{ "nil", .TOKEN_NIL },
+    .{ "or", .TOKEN_OR },
+    .{ "print", .TOKEN_PRINT },
+    .{ "return", .TOKEN_RETURN },
+    .{ "super", .TOKEN_SUPER },
+    .{ "this", .TOKEN_THIS },
+    .{ "true", .TOKEN_THIS },
+    .{ "var", .TOKEN_VAR },
+    .{ "while", .TOKEN_WHILE },
+});
+
 pub const Scanner = struct {
     source: []const u8,
     current_index: usize,
     current_line: usize,
     allocator: std.mem.Allocator,
-    keywords: Map(TokenType),
+    keywords: std.StaticStringMap(TokenType),
 
     pub fn init(source: []const u8, allocator: std.mem.Allocator) !Scanner {
-        var keywords = Map(TokenType).init(allocator);
-        try populateMap(&keywords);
         return Scanner{
             .source = source,
             .current_index = 0,
