@@ -12,6 +12,10 @@ const build_mode = @import("builtin").mode;
 
 const STACK_MAX_SIZE = 256;
 
+pub const InterpreterError = error{
+    BinOpError,
+};
+
 pub const InterpreterResult = enum {
     INTERPRET_OK,
     INTERPRET_COMPILE_ERROR,
@@ -38,6 +42,9 @@ pub const VM = struct {
     }
     pub fn deinit(self: *VM) void {
         self.stack.deinit();
+    }
+    fn peek(self: *VM, offset: usize) Value {
+        return self.stack.items[self.stack.items.len - 1 - offset];
     }
     fn resetStack(self: *VM) void {
         self.stack.clearRetainingCapacity();
@@ -87,7 +94,21 @@ pub const VM = struct {
                     // debug.printValue(value);
                     // std.debug.print("\n", .{});
                 },
-                @intFromEnum(OpCode.OP_NEGATE) => try vm.push(-vm.pop()),
+                @intFromEnum(OpCode.OP_NIL) => {
+                    try vm.push(Value.initNil());
+                },
+                @intFromEnum(OpCode.OP_TRUE) => {
+                    try vm.push(Value.initBoolean(true));
+                },
+                @intFromEnum(OpCode.OP_FALSE) => {
+                    try vm.push(Value.initBoolean(false));
+                },
+                @intFromEnum(OpCode.OP_NEGATE) => {
+                    if (!vm.peek(0).isNumber()) {
+                        try vm.throw("Operand must be a number");
+                    }
+                    try vm.push(Value.initNumber(-vm.pop().asNumber()));
+                },
                 @intFromEnum(OpCode.OP_ADD) => try vm.binOp(BinOp.PLUS),
                 @intFromEnum(OpCode.OP_SUBSTRUCT) => try vm.binOp(BinOp.MINUS),
                 @intFromEnum(OpCode.OP_MULTIPLY) => try vm.binOp(BinOp.MULTIPLY),
@@ -100,6 +121,11 @@ pub const VM = struct {
         }
     }
 
+    fn throw(self: *VM, msg: []const u8) !void {
+        const instruction_index = self.ip - self.chunk.code.items.ptr - 1; // not sure this works
+        std.debug.print("Error [line {d}]: {s}\n", .{ self.chunk.lines.items[instruction_index], msg });
+    }
+
     inline fn readByte(vm: *VM) u8 {
         const ret = vm.ip[0];
         vm.ip += 1;
@@ -110,14 +136,18 @@ pub const VM = struct {
         return vm.chunk.constants.values.items[readByte(vm)];
     }
 
-    inline fn binOp(vm: *VM, comptime operator: BinOp) !void {
+    fn binOp(vm: *VM, comptime operator: BinOp) !void {
+        if (!vm.peek(0).isNumber() or !vm.peek(1).isNumber()) {
+            try vm.throw("Operands must be a number");
+            return InterpreterError.BinOpError;
+        }
         const op_right = vm.pop();
         const op_left = vm.pop();
         switch (operator) {
-            BinOp.PLUS => try vm.push(op_left + op_right),
-            BinOp.MINUS => try vm.push(op_left - op_right),
-            BinOp.MULTIPLY => try vm.push(op_left * op_right),
-            BinOp.DIVIDE => try vm.push(op_left / op_right),
+            BinOp.PLUS => try vm.push(Value.initNumber(op_left.asNumber() + op_right.asNumber())),
+            BinOp.MINUS => try vm.push(Value.initNumber(op_left.asNumber() - op_right.asNumber())),
+            BinOp.MULTIPLY => try vm.push(Value.initNumber(op_left.asNumber() * op_right.asNumber())),
+            BinOp.DIVIDE => try vm.push(Value.initNumber(op_left.asNumber() / op_right.asNumber())),
         }
     }
 };

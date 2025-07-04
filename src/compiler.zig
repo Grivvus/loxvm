@@ -188,7 +188,7 @@ fn fillUpRules() void {
         .precedence = .NONE,
     };
     rules[@intFromEnum(tt.FALSE)] = ParseRule{
-        .prefix = null,
+        .prefix = literal,
         .infix = null,
         .precedence = .NONE,
     };
@@ -208,7 +208,7 @@ fn fillUpRules() void {
         .precedence = .NONE,
     };
     rules[@intFromEnum(tt.NIL)] = ParseRule{
-        .prefix = null,
+        .prefix = literal,
         .infix = null,
         .precedence = .NONE,
     };
@@ -238,7 +238,7 @@ fn fillUpRules() void {
         .precedence = .NONE,
     };
     rules[@intFromEnum(tt.TRUE)] = ParseRule{
-        .prefix = null,
+        .prefix = literal,
         .infix = null,
         .precedence = .NONE,
     };
@@ -287,7 +287,7 @@ fn expression(parser: *Parser) !void {
 
 fn number(parser: *Parser) !void {
     const parsed_value = try std.fmt.parseFloat(f64, parser.prev.lexeme);
-    try emitConstant(parsed_value, parser);
+    try emitConstant(Value.initNumber(parsed_value), parser);
 }
 
 fn unary(parser: *Parser) !void {
@@ -311,6 +311,15 @@ fn binary(parser: *Parser) !void {
         .MINUS => try emitOpcode(@intFromEnum(OpCode.OP_SUBSTRUCT), parser),
         .STAR => try emitOpcode(@intFromEnum(OpCode.OP_MULTIPLY), parser),
         .SLASH => try emitOpcode(@intFromEnum(OpCode.OP_DIVIDE), parser),
+        else => unreachable,
+    }
+}
+
+fn literal(parser: *Parser) !void {
+    switch (parser.prev.type_) {
+        .FALSE => try emitOpcode(@intFromEnum(OpCode.OP_FALSE), parser),
+        .TRUE => try emitOpcode(@intFromEnum(OpCode.OP_TRUE), parser),
+        .NIL => try emitOpcode(@intFromEnum(OpCode.OP_NIL), parser),
         else => unreachable,
     }
 }

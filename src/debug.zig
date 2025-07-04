@@ -27,6 +27,9 @@ pub fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
     return switch (instruction) {
         @intFromEnum(OpCode.OP_RETURN) => simpleInstruction("OP_RETURN", offset),
         @intFromEnum(OpCode.OP_CONSTANT) => constantInstruction("OP_CONSTANT", chunk, offset),
+        @intFromEnum(OpCode.OP_FALSE) => simpleInstruction("OP_FALSE", offset),
+        @intFromEnum(OpCode.OP_TRUE) => simpleInstruction("OP_TRUE", offset),
+        @intFromEnum(OpCode.OP_NIL) => simpleInstruction("OP_NIL", offset),
         @intFromEnum(OpCode.OP_NEGATE) => simpleInstruction("OP_NEGATE", offset),
         @intFromEnum(OpCode.OP_ADD) => simpleInstruction("OP_ADD", offset),
         @intFromEnum(OpCode.OP_SUBSTRUCT) => simpleInstruction("OP_SUBSTRUCT", offset),
@@ -53,7 +56,17 @@ fn constantInstruction(name: []const u8, chunk: Chunk, offset: usize) usize {
 }
 
 pub fn printValue(val: Value) void {
-    print("{any}", .{val});
+    switch (val.vt) {
+        .NIL => print("nil", .{}),
+        .BOOL => {
+            if (val.asBoolean()) {
+                print("true", .{});
+            } else {
+                print("false", .{});
+            }
+        },
+        .NUMBER => print("{any}", .{val.asNumber()}),
+    }
 }
 
 pub fn printStack(stack: []Value) void {
