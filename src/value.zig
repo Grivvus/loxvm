@@ -40,6 +40,16 @@ pub const Value = struct {
     pub fn isNil(self: Value) bool {
         return self.vt == .NIL;
     }
+    pub fn isEqual(v1: Value, v2: Value) bool {
+        if (v1.vt != v2.vt) {
+            return false;
+        }
+        return switch (v1.vt) {
+            .BOOL => v1.asBoolean() == v2.asBoolean(),
+            .NIL => true, // v1 and v2 have same type, so nil == nil
+            .NUMBER => v1.asNumber() == v2.asNumber(),
+        };
+    }
 };
 
 pub const ValueArray = struct {

@@ -124,8 +124,8 @@ fn fillUpRules() void {
     };
     rules[@intFromEnum(tt.BANG_EQUAL)] = ParseRule{
         .prefix = null,
-        .infix = null,
-        .precedence = .NONE,
+        .infix = binary,
+        .precedence = .EQUALITY,
     };
     rules[@intFromEnum(tt.EQUAL)] = ParseRule{
         .prefix = null,
@@ -134,28 +134,28 @@ fn fillUpRules() void {
     };
     rules[@intFromEnum(tt.EQUAL_EQUAL)] = ParseRule{
         .prefix = null,
-        .infix = null,
-        .precedence = .NONE,
+        .infix = binary,
+        .precedence = .EQUALITY,
     };
     rules[@intFromEnum(tt.GREATER)] = ParseRule{
         .prefix = null,
-        .infix = null,
-        .precedence = .NONE,
+        .infix = binary,
+        .precedence = .COMPARISON,
     };
     rules[@intFromEnum(tt.GREATER_EQUAL)] = ParseRule{
         .prefix = null,
-        .infix = null,
-        .precedence = .NONE,
+        .infix = binary,
+        .precedence = .COMPARISON,
     };
     rules[@intFromEnum(tt.LESS)] = ParseRule{
         .prefix = null,
-        .infix = null,
-        .precedence = .NONE,
+        .infix = binary,
+        .precedence = .COMPARISON,
     };
     rules[@intFromEnum(tt.LESS_EQUAL)] = ParseRule{
         .prefix = null,
-        .infix = null,
-        .precedence = .NONE,
+        .infix = binary,
+        .precedence = .COMPARISON,
     };
     rules[@intFromEnum(tt.IDENTIFIER)] = ParseRule{
         .prefix = null,
@@ -308,6 +308,13 @@ fn binary(parser: *Parser) !void {
     try parsePrecedence(rule.precedence, parser);
 
     switch (operator_type) {
+        .BANG_EQUAL => try emitOpcodes(@intFromEnum(OpCode.OP_EQUAL), @intFromEnum(OpCode.OP_NOT), parser),
+        .EQUAL_EQUAL => try emitOpcode(@intFromEnum(OpCode.OP_EQUAL), parser),
+        .GREATER => try emitOpcode(@intFromEnum(OpCode.OP_GREATER), parser),
+        .GREATER_EQUAL => try emitOpcodes(@intFromEnum(OpCode.OP_LESS), @intFromEnum(OpCode.OP_NOT), parser),
+        .LESS => try emitOpcode(@intFromEnum(OpCode.OP_LESS), parser),
+        .LESS_EQUAL => try emitOpcodes(@intFromEnum(OpCode.OP_GREATER), @intFromEnum(OpCode.OP_NOT), parser),
+
         .PLUS => try emitOpcode(@intFromEnum(OpCode.OP_ADD), parser),
         .MINUS => try emitOpcode(@intFromEnum(OpCode.OP_SUBSTRUCT), parser),
         .STAR => try emitOpcode(@intFromEnum(OpCode.OP_MULTIPLY), parser),

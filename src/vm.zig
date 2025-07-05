@@ -27,6 +27,8 @@ pub const BinOp = enum {
     MINUS,
     MULTIPLY,
     DIVIDE,
+    GREATER,
+    LESS,
 };
 
 pub const VM = struct {
@@ -114,6 +116,14 @@ pub const VM = struct {
                 @intFromEnum(OpCode.OP_MULTIPLY) => try vm.binOp(BinOp.MULTIPLY),
                 @intFromEnum(OpCode.OP_DIVIDE) => try vm.binOp(BinOp.DIVIDE),
                 @intFromEnum(OpCode.OP_NOT) => try vm.push(Value.initBoolean(isFalsey(vm.pop()))),
+                @intFromEnum(OpCode.OP_EQUAL) => {
+                    const v2 = vm.pop();
+                    const v1 = vm.pop();
+                    const res = Value.isEqual(v1, v2);
+                    try vm.push(Value.initBoolean(res));
+                },
+                @intFromEnum(OpCode.OP_GREATER) => try vm.binOp(BinOp.GREATER),
+                @intFromEnum(OpCode.OP_LESS) => try vm.binOp(BinOp.LESS),
                 else => {
                     std.debug.print("Unkown instruction {d}\n", .{instruction});
                     @panic("Error");
@@ -149,6 +159,8 @@ pub const VM = struct {
             BinOp.MINUS => try vm.push(Value.initNumber(op_left.asNumber() - op_right.asNumber())),
             BinOp.MULTIPLY => try vm.push(Value.initNumber(op_left.asNumber() * op_right.asNumber())),
             BinOp.DIVIDE => try vm.push(Value.initNumber(op_left.asNumber() / op_right.asNumber())),
+            BinOp.GREATER => try vm.push(Value.initBoolean(op_left.asNumber() > op_right.asNumber())),
+            BinOp.LESS => try vm.push(Value.initBoolean(op_left.asNumber() < op_right.asNumber())),
         }
     }
     fn isFalsey(val: Value) bool {
