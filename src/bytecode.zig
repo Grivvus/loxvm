@@ -10,6 +10,7 @@ const ValueArray = value_mod.ValueArray;
 pub const OpCode = enum(u8) {
     OP_RETURN,
     OP_NEGATE,
+    OP_NOT,
     OP_ADD,
     OP_SUBSTRUCT,
     OP_DIVIDE,

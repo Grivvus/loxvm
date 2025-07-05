@@ -37,6 +37,9 @@ pub const Value = struct {
     pub fn isNumber(self: Value) bool {
         return self.vt == .NUMBER;
     }
+    pub fn isNil(self: Value) bool {
+        return self.vt == .NIL;
+    }
 };
 
 pub const ValueArray = struct {

@@ -35,6 +35,7 @@ pub fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
         @intFromEnum(OpCode.OP_SUBSTRUCT) => simpleInstruction("OP_SUBSTRUCT", offset),
         @intFromEnum(OpCode.OP_MULTIPLY) => simpleInstruction("OP_MULTIPLY", offset),
         @intFromEnum(OpCode.OP_DIVIDE) => simpleInstruction("OP_DIVIDE", offset),
+        @intFromEnum(OpCode.OP_NOT) => simpleInstruction("OP_NOT", offset),
         else => {
             print("Unkown opcode {d}\n", .{instruction});
             return offset + 1;

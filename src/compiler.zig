@@ -118,7 +118,7 @@ fn fillUpRules() void {
         .precedence = .FACTOR,
     };
     rules[@intFromEnum(tt.BANG)] = ParseRule{
-        .prefix = null,
+        .prefix = unary,
         .infix = null,
         .precedence = .NONE,
     };
@@ -296,6 +296,7 @@ fn unary(parser: *Parser) !void {
     try parsePrecedence(.UNARY, parser);
 
     switch (operator_type) {
+        .BANG => try emitOpcode(@intFromEnum(OpCode.OP_NOT), parser),
         .MINUS => try emitOpcode(@intFromEnum(OpCode.OP_NEGATE), parser),
         else => unreachable,
     }
