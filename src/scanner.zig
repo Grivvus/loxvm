@@ -107,6 +107,9 @@ pub const Scanner = struct {
             return Token.init(.EOF, "", self.current_line);
         }
         const c = self.advance();
+        if (isAlpha(c)) {
+            return self.identifier();
+        }
         if (isDigit(c)) {
             return self.number();
         }
@@ -185,6 +188,16 @@ pub const Scanner = struct {
         return Token.init(.NUMBER, self.source[start..end], self.current_line);
     }
 
+    fn identifier(self: *Scanner) Token {
+        const start = self.current_index - 1;
+        while (isAlpha(self.peek()) or isDigit(self.peek())) {
+            _ = advance(self);
+        }
+        const end = self.current_index;
+        const token_type = self.keywords.get(self.source[start..end]) orelse TokenType.IDENTIFIER;
+        return Token.init(token_type, self.source[start..end], self.current_line);
+    }
+
     fn isAtEnd(self: *Scanner) bool {
         return self.current_index == (self.source.len - 1);
     }
@@ -225,16 +238,6 @@ pub const Scanner = struct {
                 else => return,
             }
         }
-    }
-
-    fn identifier(self: *Scanner) Token {
-        const start = self.current_index;
-        while (isAlpha(self.peek()) or isDigit(self.peek())) {
-            _ = advance(self);
-        }
-        const end = self.current_index;
-        const token_type = self.keywords.get(self.source[start .. end + 1]) orelse TokenType.IDENTIFIER;
-        return Token.init(token_type, self.source[start .. end + 1]);
     }
 
     fn peekPrev(self: *Scanner) u8 {
