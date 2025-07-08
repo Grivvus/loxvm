@@ -3,11 +3,13 @@ const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const bytecode = @import("bytecode.zig");
 const value_mod = @import("value.zig");
+const object = @import("object.zig");
 const debug = @import("debug.zig");
 const compiler = @import("compiler.zig");
 const Chunk = bytecode.Chunk;
 const OpCode = bytecode.OpCode;
 const Value = value_mod.Value;
+const Object = object.Object;
 const build_mode = @import("builtin").mode;
 
 const STACK_MAX_SIZE = 256;
@@ -35,15 +37,22 @@ pub const VM = struct {
     chunk: *Chunk,
     ip: [*]u8,
     stack: ArrayList(Value),
-    alloc: Allocator,
+    arena_alloc: Allocator,
+    obj_alloc: Allocator,
+    gpa: std.heap.GeneralPurposeAllocator(.{}),
 
     pub fn init(allocator: Allocator) VM {
-        var vm = VM{ .chunk = undefined, .ip = undefined, .stack = ArrayList(Value).init(allocator), .alloc = allocator };
+        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        var vm: VM = .{ .chunk = undefined, .ip = undefined, .stack = ArrayList(Value).init(allocator), .arena_alloc = allocator, .gpa = gpa, .obj_alloc = gpa.allocator() };
         vm.resetStack();
         return vm;
     }
     pub fn deinit(self: *VM) void {
         self.stack.deinit();
+        const leaked = self.gpa.deinit();
+        if (leaked == .leak) {
+            std.log.err("Memory leak detected in object allocator", .{});
+        }
     }
     fn peek(self: *VM, offset: usize) Value {
         return self.stack.items[self.stack.items.len - 1 - offset];
@@ -63,8 +72,8 @@ pub const VM = struct {
     }
 
     pub fn interpret(vm: *VM, source: []const u8) !InterpreterResult {
-        var chunk = Chunk.init(vm.alloc);
-        try compiler.compile(source, &chunk, vm.alloc); // catch return InterpreterResult.INTERPRET_COMPILE_ERROR;
+        var chunk = Chunk.init(vm.arena_alloc);
+        try compiler.compile(source, &chunk, vm.arena_alloc, vm.gpa.allocator()); // catch return InterpreterResult.INTERPRET_COMPILE_ERROR;
         vm.chunk = &chunk;
         vm.ip = vm.chunk.code.items.ptr;
         return vm.run() catch InterpreterResult.INTERPRET_RUNTIME_ERROR;
@@ -111,7 +120,15 @@ pub const VM = struct {
                     }
                     try vm.push(Value.initNumber(-vm.pop().asNumber()));
                 },
-                @intFromEnum(OpCode.OP_ADD) => try vm.binOp(BinOp.PLUS),
+                @intFromEnum(OpCode.OP_ADD) => {
+                    if (vm.peek(0).isObject() and vm.peek(0).asObject().isObjString() and vm.peek(1).isObject() and vm.peek(1).asObject().isObjString()) {
+                        try vm.concat();
+                    } else if (vm.peek(0).isNumber() and vm.peek(1).isNumber()) {
+                        try vm.binOp(BinOp.PLUS);
+                    } else {
+                        try vm.throw("Operands must be a two number or two strings");
+                    }
+                },
                 @intFromEnum(OpCode.OP_SUBSTRUCT) => try vm.binOp(BinOp.MINUS),
                 @intFromEnum(OpCode.OP_MULTIPLY) => try vm.binOp(BinOp.MULTIPLY),
                 @intFromEnum(OpCode.OP_DIVIDE) => try vm.binOp(BinOp.DIVIDE),
@@ -162,6 +179,18 @@ pub const VM = struct {
             BinOp.GREATER => try vm.push(Value.initBoolean(op_left.asNumber() > op_right.asNumber())),
             BinOp.LESS => try vm.push(Value.initBoolean(op_left.asNumber() < op_right.asNumber())),
         }
+    }
+    fn concat(vm: *VM) !void {
+        const str2 = vm.pop().asObject().asObjString();
+        const str1 = vm.pop().asObject().asObjString();
+        var alloc_str = try vm.gpa.allocator().alloc(u8, str1.str.len + str2.str.len);
+        defer vm.obj_alloc.free(alloc_str);
+        @memcpy(alloc_str[0..str1.str.len], str1.str);
+        @memcpy(alloc_str[str1.str.len..], str2.str);
+        try vm.push(Value.initObject(try Object.initObjString(
+            alloc_str[0..],
+            vm.gpa.allocator(),
+        )));
     }
     fn isFalsey(val: Value) bool {
         return val.isNil() or (val.isBoolean() and !val.asBoolean());

@@ -1,10 +1,12 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const scanner = @import("scanner.zig");
+const object = @import("object.zig");
 const debug = @import("debug.zig");
 const Chunk = @import("bytecode.zig").Chunk;
 const OpCode = @import("bytecode.zig").OpCode;
 const Value = @import("value.zig").Value;
+const ObjString = object.ObjString;
 const Scanner = scanner.Scanner;
 const Token = scanner.Token;
 const TokenType = scanner.TokenType;
@@ -14,9 +16,10 @@ const Parser = struct {
     current: Token,
     hadError: bool,
     scanner: Scanner,
+    object_allocator: std.mem.Allocator,
 
-    pub fn init(sc: Scanner) Parser {
-        return Parser{ .prev = undefined, .current = undefined, .hadError = false, .scanner = sc };
+    pub fn init(sc: Scanner, alloc: std.mem.Allocator) Parser {
+        return Parser{ .prev = undefined, .current = undefined, .hadError = false, .scanner = sc, .object_allocator = alloc };
     }
 
     pub fn advance(self: *Parser) void {
@@ -163,7 +166,7 @@ fn fillUpRules() void {
         .precedence = .NONE,
     };
     rules[@intFromEnum(tt.STRING)] = ParseRule{
-        .prefix = null,
+        .prefix = string,
         .infix = null,
         .precedence = .NONE,
     };
@@ -269,10 +272,10 @@ fn getRule(tt: TokenType) *ParseRule {
 }
 
 var compiling_chunk: *Chunk = undefined;
-pub fn compile(source: []const u8, chunk: *Chunk, allocator: std.mem.Allocator) !void {
+pub fn compile(source: []const u8, chunk: *Chunk, arena: std.mem.Allocator, obj_alloc: std.mem.Allocator) !void {
     fillUpRules();
-    const sc = try scanner.Scanner.init(source, allocator);
-    var parser = Parser.init(sc);
+    const sc = try scanner.Scanner.init(source, arena);
+    var parser = Parser.init(sc, obj_alloc);
     compiling_chunk = chunk;
     parser.advance();
     try expression(&parser);
@@ -330,6 +333,11 @@ fn literal(parser: *Parser) !void {
         .NIL => try emitOpcode(@intFromEnum(OpCode.OP_NIL), parser),
         else => unreachable,
     }
+}
+
+fn string(parser: *Parser) !void {
+    const value = Value.initObject(try object.Object.initObjString(parser.prev.lexeme, parser.object_allocator));
+    try emitConstant(value, parser);
 }
 
 fn parsePrecedence(precedence: Precedence, parser: *Parser) !void {

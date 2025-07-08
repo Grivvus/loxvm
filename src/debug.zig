@@ -70,6 +70,7 @@ pub fn printValue(val: Value) void {
             }
         },
         .NUMBER => print("{any}", .{val.asNumber()}),
+        .OBJECT => val.asObject().printObject(),
     }
 }
 
