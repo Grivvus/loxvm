@@ -159,8 +159,8 @@ pub const Scanner = struct {
     }
 
     fn string(self: *Scanner) Token {
-        const start = self.current_index - 1;
-        while (self.peek() != '"' and !self.isAtEnd()) {
+        const start = self.current_index;
+        while (!self.isAtEnd() and self.peek() != '"') {
             if (self.peek() == '\n') {
                 self.current_line += 1;
             }
@@ -170,6 +170,7 @@ pub const Scanner = struct {
             return Token.init(.ERROR, "Unterminated string", self.current_line);
         }
         const end = self.current_index;
+        _ = self.advance();
         return Token.init(.STRING, self.source[start..end], self.current_line);
     }
 
