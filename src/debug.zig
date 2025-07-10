@@ -39,6 +39,11 @@ pub fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
         @intFromEnum(OpCode.OP_EQUAL) => simpleInstruction("OP_EQUAL", offset),
         @intFromEnum(OpCode.OP_GREATER) => simpleInstruction("OP_GREATER", offset),
         @intFromEnum(OpCode.OP_LESS) => simpleInstruction("OP_LESS", offset),
+        @intFromEnum(OpCode.OP_PRINT) => simpleInstruction("OP_PRINT", offset),
+        @intFromEnum(OpCode.OP_POP) => simpleInstruction("OP_POP", offset),
+        @intFromEnum(OpCode.OP_DEFINE_GLOBAL) => constantInstruction("OP_DEFINE_GLOBAL", chunk, offset),
+        @intFromEnum(OpCode.OP_GET_GLOBAL) => constantInstruction("OP_GET_GLOBAL", chunk, offset),
+        @intFromEnum(OpCode.OP_SET_GLOBAL) => constantInstruction("OP_SET_GLOBAL", chunk, offset),
         else => {
             print("Unkown opcode {d}\n", .{instruction});
             return offset + 1;

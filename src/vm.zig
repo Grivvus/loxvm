@@ -1,5 +1,6 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
+const HashMap = std.StringHashMap;
 const Allocator = std.mem.Allocator;
 const bytecode = @import("bytecode.zig");
 const value_mod = @import("value.zig");
@@ -37,17 +38,19 @@ pub const VM = struct {
     chunk: *Chunk,
     ip: [*]u8,
     stack: ArrayList(Value),
+    globals: HashMap(Value),
     arena_alloc: Allocator,
     obj_alloc: Allocator,
     gpa: std.heap.GeneralPurposeAllocator(.{}),
 
     pub fn init(allocator: Allocator) VM {
         var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-        var vm: VM = .{ .chunk = undefined, .ip = undefined, .stack = ArrayList(Value).init(allocator), .arena_alloc = allocator, .gpa = gpa, .obj_alloc = gpa.allocator() };
+        var vm = VM{ .chunk = undefined, .ip = undefined, .stack = ArrayList(Value).init(allocator), .globals = HashMap(Value).init(allocator), .arena_alloc = allocator, .gpa = gpa, .obj_alloc = gpa.allocator() };
         vm.resetStack();
         return vm;
     }
     pub fn deinit(self: *VM) void {
+        self.globals.deinit();
         self.stack.deinit();
         const leaked = self.gpa.deinit();
         if (leaked == .leak) {
@@ -95,8 +98,8 @@ pub const VM = struct {
             const instruction = readByte(vm);
             switch (instruction) {
                 @intFromEnum(OpCode.OP_RETURN) => {
-                    debug.printValue(vm.pop());
-                    std.debug.print("\n", .{});
+                    // debug.printValue(vm.pop());
+                    // std.debug.print("\n", .{});
                     return InterpreterResult.INTERPRET_OK;
                 },
                 @intFromEnum(OpCode.OP_CONSTANT) => {
@@ -117,6 +120,7 @@ pub const VM = struct {
                 @intFromEnum(OpCode.OP_NEGATE) => {
                     if (!vm.peek(0).isNumber()) {
                         try vm.throw("Operand must be a number");
+                        return InterpreterResult.INTERPRET_RUNTIME_ERROR;
                     }
                     try vm.push(Value.initNumber(-vm.pop().asNumber()));
                 },
@@ -127,6 +131,7 @@ pub const VM = struct {
                         try vm.binOp(BinOp.PLUS);
                     } else {
                         try vm.throw("Operands must be a two number or two strings");
+                        return InterpreterResult.INTERPRET_RUNTIME_ERROR;
                     }
                 },
                 @intFromEnum(OpCode.OP_SUBSTRUCT) => try vm.binOp(BinOp.MINUS),
@@ -141,6 +146,35 @@ pub const VM = struct {
                 },
                 @intFromEnum(OpCode.OP_GREATER) => try vm.binOp(BinOp.GREATER),
                 @intFromEnum(OpCode.OP_LESS) => try vm.binOp(BinOp.LESS),
+                @intFromEnum(OpCode.OP_PRINT) => {
+                    vm.pop().printValue();
+                    std.debug.print("\n", .{});
+                },
+                @intFromEnum(OpCode.OP_POP) => {
+                    _ = vm.pop();
+                },
+                @intFromEnum(OpCode.OP_DEFINE_GLOBAL) => {
+                    const name = readConstant(vm).asObject().asObjString();
+                    try vm.globals.put(name.str, peek(vm, 0));
+                    _ = pop(vm);
+                },
+                @intFromEnum(OpCode.OP_GET_GLOBAL) => {
+                    const name = readConstant(vm).asObject().asObjString();
+                    const value = vm.globals.get(name.str);
+                    if (value == null) {
+                        try throw(vm, "Undefined variable");
+                        return InterpreterResult.INTERPRET_RUNTIME_ERROR;
+                    }
+                    try vm.push(value.?);
+                },
+                @intFromEnum(OpCode.OP_SET_GLOBAL) => {
+                    const name = readConstant(vm).asObject().asObjString();
+                    if (!vm.globals.contains(name.str)) {
+                        try throw(vm, "Undefined variable");
+                        return InterpreterResult.INTERPRET_RUNTIME_ERROR;
+                    }
+                    try vm.globals.put(name.str, vm.peek(0));
+                },
                 else => {
                     std.debug.print("Unkown instruction {d}\n", .{instruction});
                     @panic("Error");

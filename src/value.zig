@@ -71,6 +71,22 @@ pub const Value = struct {
             },
         };
     }
+    pub fn printValue(self: Value) void {
+        switch (self.vt) {
+            ValueType.BOOL => {
+                if (self.asBoolean()) std.debug.print("true", .{}) else std.debug.print("false", .{});
+            },
+            ValueType.NIL => {
+                std.debug.print("nil", .{});
+            },
+            ValueType.NUMBER => {
+                std.debug.print("{}", .{self.asNumber()});
+            },
+            ValueType.OBJECT => {
+                self.asObject().printObject();
+            },
+        }
+    }
 };
 
 pub const ValueArray = struct {

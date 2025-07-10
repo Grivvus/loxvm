@@ -8,6 +8,11 @@ const ValueArray = value_mod.ValueArray;
 
 /// todo: implement OP_CONSTANT_LONG instruction
 pub const OpCode = enum(u8) {
+    OP_POP,
+    OP_GET_GLOBAL,
+    OP_SET_GLOBAL,
+    OP_DEFINE_GLOBAL,
+    OP_PRINT,
     OP_RETURN,
     OP_NEGATE,
     OP_NOT,

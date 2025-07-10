@@ -6,6 +6,7 @@ const debug = @import("debug.zig");
 const Chunk = @import("bytecode.zig").Chunk;
 const OpCode = @import("bytecode.zig").OpCode;
 const Value = @import("value.zig").Value;
+const Object = object.Object;
 const ObjString = object.ObjString;
 const Scanner = scanner.Scanner;
 const Token = scanner.Token;
@@ -40,6 +41,13 @@ const Parser = struct {
             errorAt(self.current, msg);
         }
     }
+    pub fn match(self: *Parser, type_: TokenType) bool {
+        if (self.current.type_ != type_) {
+            return false;
+        }
+        self.advance();
+        return true;
+    }
 };
 
 const Precedence = enum(u8) {
@@ -57,8 +65,8 @@ const Precedence = enum(u8) {
 };
 
 const ParseRule = struct {
-    prefix: ?*const fn (parser: *Parser) anyerror!void,
-    infix: ?*const fn (parser: *Parser) anyerror!void,
+    prefix: ?*const fn (parser: *Parser, can_assign: bool) anyerror!void,
+    infix: ?*const fn (parser: *Parser, can_assign: bool) anyerror!void,
     precedence: Precedence,
 };
 
@@ -161,7 +169,7 @@ fn fillUpRules() void {
         .precedence = .COMPARISON,
     };
     rules[@intFromEnum(tt.IDENTIFIER)] = ParseRule{
-        .prefix = null,
+        .prefix = variable,
         .infix = null,
         .precedence = .NONE,
     };
@@ -278,7 +286,9 @@ pub fn compile(source: []const u8, chunk: *Chunk, arena: std.mem.Allocator, obj_
     var parser = Parser.init(sc, obj_alloc);
     compiling_chunk = chunk;
     parser.advance();
-    try expression(&parser);
+    while (!parser.match(.EOF)) {
+        try declaration(&parser);
+    }
 
     parser.consume(.EOF, "expect end of expression");
     try endCompiler(&parser);
@@ -288,12 +298,67 @@ fn expression(parser: *Parser) !void {
     try parsePrecedence(.ASSIGNMENT, parser);
 }
 
-fn number(parser: *Parser) !void {
+fn declaration(parser: *Parser) !void {
+    if (parser.match(.VAR)) {
+        try varDeclaration(parser);
+    } else {
+        try statement(parser);
+    }
+}
+
+fn varDeclaration(parser: *Parser) !void {
+    const global = try parseVariable(parser, "Expect variable name");
+
+    if (parser.match(.EQUAL)) {
+        try expression(parser);
+    } else {
+        try emitOpcode(@intFromEnum(OpCode.OP_NIL), parser);
+    }
+    parser.consume(.SEMICOLON, "Expect ';' after variable declaration");
+    try defineVariable(parser, global);
+}
+
+fn parseVariable(parser: *Parser, msg: []const u8) !u8 {
+    parser.consume(.IDENTIFIER, msg);
+    return try identifierConstant(parser, parser.prev);
+}
+
+fn identifierConstant(parser: *Parser, name: Token) !u8 {
+    return try makeConstant(Value.initObject(try Object.initObjString(name.lexeme, parser.object_allocator)));
+}
+
+fn defineVariable(parser: *Parser, identifier_constant: u8) !void {
+    try emitOpcodes(@intFromEnum(OpCode.OP_DEFINE_GLOBAL), identifier_constant, parser);
+}
+
+fn statement(parser: *Parser) !void {
+    if (parser.match(.PRINT)) {
+        try printStatement(parser);
+    } else {
+        try expressionStatement(parser);
+    }
+}
+
+fn printStatement(parser: *Parser) !void {
+    try expression(parser);
+    parser.consume(.SEMICOLON, "Expect ';' after value.");
+    try emitOpcode(@intFromEnum(OpCode.OP_PRINT), parser);
+}
+
+fn expressionStatement(parser: *Parser) !void {
+    try expression(parser);
+    parser.consume(.SEMICOLON, "Expect ';' after expression.");
+    try emitOpcode(@intFromEnum(OpCode.OP_POP), parser);
+}
+
+fn number(parser: *Parser, can_assign: bool) !void {
+    _ = can_assign;
     const parsed_value = try std.fmt.parseFloat(f64, parser.prev.lexeme);
     try emitConstant(Value.initNumber(parsed_value), parser);
 }
 
-fn unary(parser: *Parser) !void {
+fn unary(parser: *Parser, can_assign: bool) !void {
+    _ = can_assign;
     const operator_type = parser.prev.type_;
 
     try parsePrecedence(.UNARY, parser);
@@ -305,7 +370,8 @@ fn unary(parser: *Parser) !void {
     }
 }
 
-fn binary(parser: *Parser) !void {
+fn binary(parser: *Parser, can_assign: bool) !void {
+    _ = can_assign;
     const operator_type = parser.prev.type_;
     const rule: *ParseRule = getRule(operator_type);
     try parsePrecedence(rule.precedence, parser);
@@ -326,7 +392,8 @@ fn binary(parser: *Parser) !void {
     }
 }
 
-fn literal(parser: *Parser) !void {
+fn literal(parser: *Parser, can_assign: bool) !void {
+    _ = can_assign;
     switch (parser.prev.type_) {
         .FALSE => try emitOpcode(@intFromEnum(OpCode.OP_FALSE), parser),
         .TRUE => try emitOpcode(@intFromEnum(OpCode.OP_TRUE), parser),
@@ -335,9 +402,21 @@ fn literal(parser: *Parser) !void {
     }
 }
 
-fn string(parser: *Parser) !void {
+fn string(parser: *Parser, can_assign: bool) !void {
+    _ = can_assign;
     const value = Value.initObject(try object.Object.initObjString(parser.prev.lexeme, parser.object_allocator));
     try emitConstant(value, parser);
+}
+
+fn variable(parser: *Parser, can_assign: bool) !void {
+    const name = parser.prev;
+    const arg = try identifierConstant(parser, name);
+    if (can_assign and parser.match(.EQUAL)) {
+        try expression(parser);
+        try emitOpcodes(@intFromEnum(OpCode.OP_SET_GLOBAL), arg, parser);
+    } else {
+        try emitOpcodes(@intFromEnum(OpCode.OP_GET_GLOBAL), arg, parser);
+    }
 }
 
 fn parsePrecedence(precedence: Precedence, parser: *Parser) !void {
@@ -347,16 +426,21 @@ fn parsePrecedence(precedence: Precedence, parser: *Parser) !void {
         errorAt(parser.prev, "Expect expression");
         return;
     }
-    try prefixRule.?(parser);
+    const can_assign = @intFromEnum(precedence) <= @intFromEnum(Precedence.ASSIGNMENT);
+    try prefixRule.?(parser, can_assign);
 
     while (@intFromEnum(precedence) <= @intFromEnum(getRule(parser.current.type_).precedence)) {
         parser.advance();
         const infixRule = getRule(parser.prev.type_).infix;
-        try infixRule.?(parser);
+        try infixRule.?(parser, can_assign);
+    }
+    if (can_assign and parser.match(.EQUAL)) {
+        errorAt(parser.current, "Invalid assignment target");
     }
 }
 
-fn grouping(parser: *Parser) !void {
+fn grouping(parser: *Parser, can_assign: bool) !void {
+    _ = can_assign;
     try expression(parser);
     parser.consume(.RIGHT_PAREN, "expect ')' after expression");
 }
