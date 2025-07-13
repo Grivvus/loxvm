@@ -17,10 +17,11 @@ const Parser = struct {
     current: Token,
     hadError: bool,
     scanner: Scanner,
+    compiler: Compiler,
     object_allocator: std.mem.Allocator,
 
-    pub fn init(sc: Scanner, alloc: std.mem.Allocator) Parser {
-        return Parser{ .prev = undefined, .current = undefined, .hadError = false, .scanner = sc, .object_allocator = alloc };
+    pub fn init(sc: Scanner, compiler: Compiler, alloc: std.mem.Allocator) Parser {
+        return Parser{ .prev = undefined, .current = undefined, .hadError = false, .scanner = sc, .object_allocator = alloc, .compiler = compiler };
     }
 
     pub fn advance(self: *Parser) void {
@@ -47,6 +48,51 @@ const Parser = struct {
         }
         self.advance();
         return true;
+    }
+};
+
+const Local = struct {
+    name: Token,
+    depth: i32,
+};
+
+const CompilerError = error{
+    CantResolve,
+    CompilationError,
+};
+
+const Compiler = struct {
+    locals: [256]Local,
+    local_cnt: usize,
+    scope_depth: i32,
+    pub fn init() Compiler {
+        return Compiler{ .locals = undefined, .local_cnt = 0, .scope_depth = 0 };
+    }
+    pub fn beginScope(self: *Compiler) void {
+        self.scope_depth += 1;
+    }
+    pub fn endScope(self: *Compiler, parser: *Parser) !void {
+        self.scope_depth -= 1;
+
+        while (self.local_cnt > 0 and self.locals[self.local_cnt - 1].depth > self.scope_depth) {
+            try emitOpcode(@intFromEnum(OpCode.OP_POP), parser);
+            self.local_cnt -= 1;
+        }
+    }
+    pub fn resolve(self: *Compiler, name: Token) CompilerError!usize {
+        var i: i32 = @intCast(self.local_cnt);
+        i -= 1;
+        while (i >= 0) {
+            const local = self.locals[@intCast(i)];
+            if (std.mem.eql(u8, local.name.lexeme, name.lexeme)) {
+                if (local.depth == -1) {
+                    errorAt(name, "Can't read local variable in it's own initializer");
+                }
+                return @intCast(i);
+            }
+            i -= 1;
+        }
+        return CompilerError.CantResolve;
     }
 };
 
@@ -283,7 +329,8 @@ var compiling_chunk: *Chunk = undefined;
 pub fn compile(source: []const u8, chunk: *Chunk, arena: std.mem.Allocator, obj_alloc: std.mem.Allocator) !void {
     fillUpRules();
     const sc = try scanner.Scanner.init(source, arena);
-    var parser = Parser.init(sc, obj_alloc);
+    const compiler = Compiler.init();
+    var parser = Parser.init(sc, compiler, obj_alloc);
     compiling_chunk = chunk;
     parser.advance();
     while (!parser.match(.EOF)) {
@@ -320,6 +367,10 @@ fn varDeclaration(parser: *Parser) !void {
 
 fn parseVariable(parser: *Parser, msg: []const u8) !u8 {
     parser.consume(.IDENTIFIER, msg);
+    try declareVarible(parser);
+    if (parser.compiler.scope_depth > 0) {
+        return 0;
+    }
     return try identifierConstant(parser, parser.prev);
 }
 
@@ -327,13 +378,56 @@ fn identifierConstant(parser: *Parser, name: Token) !u8 {
     return try makeConstant(Value.initObject(try Object.initObjString(name.lexeme, parser.object_allocator)));
 }
 
+fn declareVarible(parser: *Parser) !void {
+    if (parser.compiler.scope_depth == 0) {
+        return;
+    }
+    const name = parser.prev;
+    var i: i32 = @intCast(parser.compiler.local_cnt);
+    i -= 1;
+    while (i >= 0) {
+        const local = parser.compiler.locals[@intCast(i)];
+        if (local.depth != -1 and local.depth < parser.compiler.scope_depth) {
+            break;
+        }
+        if (std.mem.eql(u8, local.name.lexeme, name.lexeme)) {
+            errorAt(parser.prev, "Variable with this name is already exist in this scope");
+        }
+        i -= 1;
+    }
+    addLocal(parser, name);
+}
+
+fn addLocal(parser: *Parser, name: Token) void {
+    if (parser.compiler.local_cnt >= 256) {
+        errorAt(parser.current, "Too many local variables in function");
+        return;
+    }
+    const local = Local{ .name = name, .depth = -1 };
+    parser.compiler.locals[parser.compiler.local_cnt] = local;
+    parser.compiler.local_cnt += 1;
+    std.debug.print("{any}\n", .{parser.compiler.locals[0..parser.compiler.local_cnt]});
+}
+
 fn defineVariable(parser: *Parser, identifier_constant: u8) !void {
+    if (parser.compiler.scope_depth > 0) {
+        markInitialized(parser);
+        return;
+    }
     try emitOpcodes(@intFromEnum(OpCode.OP_DEFINE_GLOBAL), identifier_constant, parser);
+}
+
+fn markInitialized(parser: *Parser) void {
+    parser.compiler.locals[parser.compiler.local_cnt - 1].depth = parser.compiler.scope_depth;
 }
 
 fn statement(parser: *Parser) !void {
     if (parser.match(.PRINT)) {
         try printStatement(parser);
+    } else if (parser.match(.LEFT_BRACE)) {
+        parser.compiler.beginScope();
+        try blockStatement(parser);
+        try parser.compiler.endScope(parser);
     } else {
         try expressionStatement(parser);
     }
@@ -343,6 +437,14 @@ fn printStatement(parser: *Parser) !void {
     try expression(parser);
     parser.consume(.SEMICOLON, "Expect ';' after value.");
     try emitOpcode(@intFromEnum(OpCode.OP_PRINT), parser);
+}
+
+fn blockStatement(parser: *Parser) CompilerError!void {
+    while (parser.current.type_ != .RIGHT_BRACE and parser.current.type_ != .EOF) {
+        // here's type inference died in 0.14, so i must return here my own error (or any concrete error)
+        declaration(parser) catch return CompilerError.CompilationError;
+    }
+    parser.consume(.RIGHT_BRACE, "Expect '}' after block");
 }
 
 fn expressionStatement(parser: *Parser) !void {
@@ -409,13 +511,27 @@ fn string(parser: *Parser, can_assign: bool) !void {
 }
 
 fn variable(parser: *Parser, can_assign: bool) !void {
+    var get_op: u8 = undefined;
+    var set_op: u8 = undefined;
     const name = parser.prev;
+    if (parser.compiler.resolve(name) != CompilerError.CantResolve) {
+        std.debug.print("local\n", .{});
+        get_op = @intFromEnum(OpCode.OP_GET_LOCAL);
+        set_op = @intFromEnum(OpCode.OP_SET_LOCAL);
+    } else {
+        std.debug.print("global\n", .{});
+        get_op = @intFromEnum(OpCode.OP_GET_GLOBAL);
+        set_op = @intFromEnum(OpCode.OP_SET_GLOBAL);
+    }
+    std.debug.print("{any}\n", .{can_assign});
     const arg = try identifierConstant(parser, name);
     if (can_assign and parser.match(.EQUAL)) {
+        std.debug.print("set instr\n", .{});
         try expression(parser);
-        try emitOpcodes(@intFromEnum(OpCode.OP_SET_GLOBAL), arg, parser);
+        try emitOpcodes(set_op, arg, parser);
     } else {
-        try emitOpcodes(@intFromEnum(OpCode.OP_GET_GLOBAL), arg, parser);
+        std.debug.print("get instr\n", .{});
+        try emitOpcodes(get_op, arg, parser);
     }
 }
 

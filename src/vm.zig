@@ -175,6 +175,16 @@ pub const VM = struct {
                     }
                     try vm.globals.put(name.str, vm.peek(0));
                 },
+                @intFromEnum(OpCode.OP_GET_LOCAL) => {
+                    const slot = readByte(vm);
+                    std.debug.print("len of stack={d}\n", .{vm.stack.items.len});
+                    std.debug.print("slot={d}\n", .{slot});
+                    try vm.push(vm.stack.items[slot]);
+                },
+                @intFromEnum(OpCode.OP_SET_LOCAL) => {
+                    const slot = readByte(vm);
+                    vm.stack.items[slot] = vm.peek(0);
+                },
                 else => {
                     std.debug.print("Unkown instruction {d}\n", .{instruction});
                     @panic("Error");
