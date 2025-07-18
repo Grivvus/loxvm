@@ -80,17 +80,17 @@ const Compiler = struct {
         }
     }
     pub fn resolve(self: *Compiler, name: Token) CompilerError!usize {
-        var i: i32 = @intCast(self.local_cnt);
-        i -= 1;
-        while (i >= 0) {
-            const local = self.locals[@intCast(i)];
+        var i = self.local_cnt;
+        while (i > 0) {
+            i -= 1;
+            const local = &self.locals[i];
             if (std.mem.eql(u8, local.name.lexeme, name.lexeme)) {
-                if (local.depth == -1) {
+                std.debug.print("resolved at index {d}\n", .{i});
+                if (local.*.depth == -1) {
                     errorAt(name, "Can't read local variable in it's own initializer");
                 }
-                return @intCast(i);
+                return i;
             }
-            i -= 1;
         }
         return CompilerError.CantResolve;
     }
@@ -403,10 +403,10 @@ fn addLocal(parser: *Parser, name: Token) void {
         errorAt(parser.current, "Too many local variables in function");
         return;
     }
-    const local = Local{ .name = name, .depth = -1 };
-    parser.compiler.locals[parser.compiler.local_cnt] = local;
+    var local: *Local = &parser.compiler.locals[parser.compiler.local_cnt];
+    local.name = name;
+    local.depth = -1;
     parser.compiler.local_cnt += 1;
-    std.debug.print("{any}\n", .{parser.compiler.locals[0..parser.compiler.local_cnt]});
 }
 
 fn defineVariable(parser: *Parser, identifier_constant: u8) !void {
@@ -418,7 +418,9 @@ fn defineVariable(parser: *Parser, identifier_constant: u8) !void {
 }
 
 fn markInitialized(parser: *Parser) void {
-    parser.compiler.locals[parser.compiler.local_cnt - 1].depth = parser.compiler.scope_depth;
+    const index = parser.compiler.local_cnt - 1;
+    std.debug.print("index {d} has been initialized with depth {d}\n", .{ index, parser.compiler.scope_depth });
+    parser.compiler.locals[index].depth = parser.compiler.scope_depth;
 }
 
 fn statement(parser: *Parser) !void {
@@ -514,24 +516,21 @@ fn variable(parser: *Parser, can_assign: bool) !void {
     var get_op: u8 = undefined;
     var set_op: u8 = undefined;
     const name = parser.prev;
+    var arg: usize = undefined;
     if (parser.compiler.resolve(name) != CompilerError.CantResolve) {
-        std.debug.print("local\n", .{});
+        arg = try parser.compiler.resolve(name);
         get_op = @intFromEnum(OpCode.OP_GET_LOCAL);
         set_op = @intFromEnum(OpCode.OP_SET_LOCAL);
     } else {
-        std.debug.print("global\n", .{});
+        arg = try identifierConstant(parser, name);
         get_op = @intFromEnum(OpCode.OP_GET_GLOBAL);
         set_op = @intFromEnum(OpCode.OP_SET_GLOBAL);
     }
-    std.debug.print("{any}\n", .{can_assign});
-    const arg = try identifierConstant(parser, name);
     if (can_assign and parser.match(.EQUAL)) {
-        std.debug.print("set instr\n", .{});
         try expression(parser);
-        try emitOpcodes(set_op, arg, parser);
+        try emitOpcodes(set_op, @intCast(arg), parser);
     } else {
-        std.debug.print("get instr\n", .{});
-        try emitOpcodes(get_op, arg, parser);
+        try emitOpcodes(get_op, @intCast(arg), parser);
     }
 }
 

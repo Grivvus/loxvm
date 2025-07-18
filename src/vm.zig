@@ -177,8 +177,6 @@ pub const VM = struct {
                 },
                 @intFromEnum(OpCode.OP_GET_LOCAL) => {
                     const slot = readByte(vm);
-                    std.debug.print("len of stack={d}\n", .{vm.stack.items.len});
-                    std.debug.print("slot={d}\n", .{slot});
                     try vm.push(vm.stack.items[slot]);
                 },
                 @intFromEnum(OpCode.OP_SET_LOCAL) => {
