@@ -162,7 +162,7 @@ pub const VM = struct {
                     const name = readConstant(vm).asObject().asObjString();
                     const value = vm.globals.get(name.str);
                     if (value == null) {
-                        try throw(vm, "Undefined variable");
+                        try throw(vm, try std.fmt.allocPrint(vm.arena_alloc, "Undefined variable '{s}'", .{name.str}));
                         return InterpreterResult.INTERPRET_RUNTIME_ERROR;
                     }
                     try vm.push(value.?);
@@ -170,7 +170,7 @@ pub const VM = struct {
                 @intFromEnum(OpCode.OP_SET_GLOBAL) => {
                     const name = readConstant(vm).asObject().asObjString();
                     if (!vm.globals.contains(name.str)) {
-                        try throw(vm, "Undefined variable");
+                        try throw(vm, try std.fmt.allocPrint(vm.arena_alloc, "Undefined variable '{s}'", .{name.str}));
                         return InterpreterResult.INTERPRET_RUNTIME_ERROR;
                     }
                     try vm.globals.put(name.str, vm.peek(0));

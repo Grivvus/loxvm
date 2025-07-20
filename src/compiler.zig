@@ -85,7 +85,6 @@ const Compiler = struct {
             i -= 1;
             const local = &self.locals[i];
             if (std.mem.eql(u8, local.name.lexeme, name.lexeme)) {
-                std.debug.print("resolved at index {d}\n", .{i});
                 if (local.*.depth == -1) {
                     errorAt(name, "Can't read local variable in it's own initializer");
                 }
