@@ -15,6 +15,8 @@ pub const OpCode = enum(u8) {
     OP_SET_LOCAL,
     OP_DEFINE_GLOBAL,
     OP_PRINT,
+    OP_JUMP,
+    OP_JUMP_IF_FALSE,
     OP_RETURN,
     OP_NEGATE,
     OP_NOT,

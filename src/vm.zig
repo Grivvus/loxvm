@@ -97,6 +97,16 @@ pub const VM = struct {
 
             const instruction = readByte(vm);
             switch (instruction) {
+                @intFromEnum(OpCode.OP_JUMP) => {
+                    const offset = readShort(vm);
+                    vm.ip += offset;
+                },
+                @intFromEnum(OpCode.OP_JUMP_IF_FALSE) => {
+                    const offset = readShort(vm);
+                    if (isFalsey(vm.peek(0))) {
+                        vm.ip += offset;
+                    }
+                },
                 @intFromEnum(OpCode.OP_RETURN) => {
                     // debug.printValue(vm.pop());
                     // std.debug.print("\n", .{});
@@ -192,7 +202,7 @@ pub const VM = struct {
     }
 
     fn throw(self: *VM, msg: []const u8) !void {
-        const instruction_index = self.ip - self.chunk.code.items.ptr - 1; // not sure this works
+        const instruction_index = self.ip - self.chunk.code.items.ptr - 1; // not sure that this works
         std.debug.print("Error [line {d}]: {s}\n", .{ self.chunk.lines.items[instruction_index], msg });
     }
 
@@ -200,6 +210,13 @@ pub const VM = struct {
         const ret = vm.ip[0];
         vm.ip += 1;
         return ret;
+    }
+
+    inline fn readShort(vm: *VM) u16 {
+        const current_ip: u16 = @intCast(vm.ip[0]);
+        const offset = (current_ip << 8) | vm.ip[1];
+        vm.ip += 2;
+        return offset;
     }
 
     inline fn readConstant(vm: *VM) Value {

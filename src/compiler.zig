@@ -425,6 +425,8 @@ fn markInitialized(parser: *Parser) void {
 fn statement(parser: *Parser) !void {
     if (parser.match(.PRINT)) {
         try printStatement(parser);
+    } else if (parser.match(.IF)) {
+        try ifStatement(parser);
     } else if (parser.match(.LEFT_BRACE)) {
         parser.compiler.beginScope();
         try blockStatement(parser);
@@ -438,6 +440,23 @@ fn printStatement(parser: *Parser) !void {
     try expression(parser);
     parser.consume(.SEMICOLON, "Expect ';' after value.");
     try emitOpcode(@intFromEnum(OpCode.OP_PRINT), parser);
+}
+
+fn ifStatement(parser: *Parser) CompilerError!void {
+    // type inference died again
+    parser.consume(.LEFT_PAREN, "Expect '(' after 'if'");
+    expression(parser) catch return CompilerError.CompilationError;
+    parser.consume(.RIGHT_PAREN, "Expect ')' after condition");
+    const thenJump = emitJump(parser, @intFromEnum(OpCode.OP_JUMP_IF_FALSE)) catch return CompilerError.CompilationError;
+    emitOpcode(@intFromEnum(OpCode.OP_POP), parser) catch return CompilerError.CompilationError;
+    statement(parser) catch return CompilerError.CompilationError;
+    const elseJump = emitJump(parser, @intFromEnum(OpCode.OP_JUMP)) catch return CompilerError.CompilationError;
+    patchJump(parser, thenJump);
+    emitOpcode(@intFromEnum(OpCode.OP_POP), parser) catch return CompilerError.CompilationError;
+    if (parser.match(.ELSE)) {
+        statement(parser) catch return CompilerError.CompilationError;
+    }
+    patchJump(parser, elseJump);
 }
 
 fn blockStatement(parser: *Parser) CompilerError!void {
@@ -577,8 +596,24 @@ fn emitOpcodes(op1: u8, op2: u8, parser: *Parser) !void {
     try emitOpcode(op2, parser);
 }
 
+fn emitJump(parser: *Parser, jmp: u8) !usize {
+    try emitOpcode(jmp, parser);
+    try emitOpcode(0xff, parser);
+    try emitOpcode(0xff, parser);
+    return currentChunk().code.items.len - 2;
+}
+
 fn emitConstant(value: Value, parser: *Parser) !void {
     try emitOpcodes(@intFromEnum(OpCode.OP_CONSTANT), try makeConstant(value), parser);
+}
+
+fn patchJump(parser: *Parser, offset: usize) void {
+    const jump = currentChunk().code.items.len - offset - 2;
+    if (jump > std.math.maxInt(u16)) {
+        errorAt(parser.current, "Too much code to jump over");
+    }
+    currentChunk().code.items[offset] = @intCast((jump >> 8) & 0xff);
+    currentChunk().code.items[offset + 1] = @intCast(jump & 0xff);
 }
 
 fn makeConstant(value: Value) !u8 {

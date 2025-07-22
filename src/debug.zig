@@ -46,6 +46,8 @@ pub fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
         @intFromEnum(OpCode.OP_SET_GLOBAL) => constantInstruction("OP_SET_GLOBAL", chunk, offset),
         @intFromEnum(OpCode.OP_GET_LOCAL) => byteInstruction("OP_GET_LOCAL", chunk, offset),
         @intFromEnum(OpCode.OP_SET_LOCAL) => byteInstruction("OP_SET_LOCAL", chunk, offset),
+        @intFromEnum(OpCode.OP_JUMP) => jumpInstruction("OP_JUMP", 1, chunk, offset),
+        @intFromEnum(OpCode.OP_JUMP_IF_FALSE) => jumpInstruction("OP_JUMP_IF_FALSE", 1, chunk, offset),
         else => {
             print("Unkown opcode {d}\n", .{instruction});
             return offset + 1;
@@ -70,6 +72,13 @@ fn byteInstruction(name: []const u8, chunk: Chunk, offset: usize) usize {
     const slot = chunk.code.items[offset + 1];
     print("{s:<16} {d:>4}\n", .{ name, slot });
     return offset + 2;
+}
+
+fn jumpInstruction(name: []const u8, sign: usize, chunk: Chunk, offset: usize) usize {
+    const next_ip: u16 = @intCast(chunk.code.items[offset + 1]);
+    const jump = (next_ip << 8) | chunk.code.items[offset + 2];
+    print("{s:<16} {d:>4} -> {d}\n", .{ name, offset, offset + 3 + sign * jump });
+    return offset + 3;
 }
 
 pub fn printValue(val: Value) void {
