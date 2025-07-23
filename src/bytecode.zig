@@ -31,6 +31,7 @@ pub const OpCode = enum(u8) {
     OP_EQUAL,
     OP_GREATER,
     OP_LESS,
+    OP_LOOP,
 };
 
 pub const Chunk = struct {
@@ -56,5 +57,9 @@ pub const Chunk = struct {
     pub fn addConstant(self: *Chunk, value: Value) !usize {
         try self.constants.write(value);
         return self.constants.values.items.len - 1;
+    }
+
+    pub inline fn count(self: *Chunk) usize {
+        return self.code.items.len;
     }
 };

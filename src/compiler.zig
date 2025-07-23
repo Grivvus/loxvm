@@ -230,8 +230,8 @@ fn fillUpRules() void {
     };
     rules[@intFromEnum(tt.AND)] = ParseRule{
         .prefix = null,
-        .infix = null,
-        .precedence = .NONE,
+        .infix = and_,
+        .precedence = .AND,
     };
     rules[@intFromEnum(tt.CLASS)] = ParseRule{
         .prefix = null,
@@ -270,8 +270,8 @@ fn fillUpRules() void {
     };
     rules[@intFromEnum(tt.OR)] = ParseRule{
         .prefix = null,
-        .infix = null,
-        .precedence = .NONE,
+        .infix = or_,
+        .precedence = .OR,
     };
     rules[@intFromEnum(tt.PRINT)] = ParseRule{
         .prefix = null,
@@ -416,23 +416,43 @@ fn defineVariable(parser: *Parser, identifier_constant: u8) !void {
     try emitOpcodes(@intFromEnum(OpCode.OP_DEFINE_GLOBAL), identifier_constant, parser);
 }
 
+fn and_(parser: *Parser, can_assign: bool) !void {
+    _ = can_assign;
+    const and_jump = try emitJump(parser, @intFromEnum(OpCode.OP_JUMP_IF_FALSE));
+    try emitOpcode(@intFromEnum(OpCode.OP_POP), parser);
+    try parsePrecedence(.AND, parser);
+    patchJump(parser, and_jump);
+}
+
+fn or_(parser: *Parser, can_assign: bool) !void {
+    _ = can_assign;
+    const else_jump = try emitJump(parser, @intFromEnum(OpCode.OP_JUMP_IF_FALSE));
+    const then_jump = try emitJump(parser, @intFromEnum(OpCode.OP_JUMP));
+    patchJump(parser, else_jump);
+    try emitOpcode(@intFromEnum(OpCode.OP_POP), parser);
+    try parsePrecedence(.OR, parser);
+    patchJump(parser, then_jump);
+}
+
 fn markInitialized(parser: *Parser) void {
     const index = parser.compiler.local_cnt - 1;
     std.debug.print("index {d} has been initialized with depth {d}\n", .{ index, parser.compiler.scope_depth });
     parser.compiler.locals[index].depth = parser.compiler.scope_depth;
 }
 
-fn statement(parser: *Parser) !void {
+fn statement(parser: *Parser) CompilerError!void {
     if (parser.match(.PRINT)) {
-        try printStatement(parser);
+        printStatement(parser) catch return CompilerError.CompilationError;
     } else if (parser.match(.IF)) {
-        try ifStatement(parser);
+        ifStatement(parser) catch return CompilerError.CompilationError;
+    } else if (parser.match(.WHILE)) {
+        whileStatement(parser) catch return CompilerError.CompilationError;
     } else if (parser.match(.LEFT_BRACE)) {
         parser.compiler.beginScope();
         try blockStatement(parser);
-        try parser.compiler.endScope(parser);
+        parser.compiler.endScope(parser) catch return CompilerError.CompilationError;
     } else {
-        try expressionStatement(parser);
+        expressionStatement(parser) catch return CompilerError.CompilationError;
     }
 }
 
@@ -440,6 +460,19 @@ fn printStatement(parser: *Parser) !void {
     try expression(parser);
     parser.consume(.SEMICOLON, "Expect ';' after value.");
     try emitOpcode(@intFromEnum(OpCode.OP_PRINT), parser);
+}
+
+fn whileStatement(parser: *Parser) !void {
+    const loop_start = currentChunk().count();
+    parser.consume(.LEFT_PAREN, "Expect '(' after while");
+    try expression(parser);
+    parser.consume(.RIGHT_PAREN, "Expect ')' after condition");
+    const exit_jump = try emitJump(parser, @intFromEnum(OpCode.OP_JUMP_IF_FALSE));
+    try emitOpcode(@intFromEnum(OpCode.OP_POP), parser);
+    try statement(parser);
+    try emitLoop(parser, loop_start);
+    patchJump(parser, exit_jump);
+    try emitOpcode(@intFromEnum(OpCode.OP_POP), parser);
 }
 
 fn ifStatement(parser: *Parser) CompilerError!void {
@@ -600,15 +633,25 @@ fn emitJump(parser: *Parser, jmp: u8) !usize {
     try emitOpcode(jmp, parser);
     try emitOpcode(0xff, parser);
     try emitOpcode(0xff, parser);
-    return currentChunk().code.items.len - 2;
+    return currentChunk().count() - 2;
 }
 
 fn emitConstant(value: Value, parser: *Parser) !void {
     try emitOpcodes(@intFromEnum(OpCode.OP_CONSTANT), try makeConstant(value), parser);
 }
 
+fn emitLoop(parser: *Parser, loop_start: usize) !void {
+    try emitOpcode(@intFromEnum(OpCode.OP_LOOP), parser);
+    const offset = currentChunk().count() - loop_start + 2;
+    if (offset > std.math.maxInt(u16)) {
+        errorAt(parser.current, "Loop body too large");
+    }
+    try emitOpcode(@intCast((offset >> 8) & 0xff), parser);
+    try emitOpcode(@intCast(offset & 0xff), parser);
+}
+
 fn patchJump(parser: *Parser, offset: usize) void {
-    const jump = currentChunk().code.items.len - offset - 2;
+    const jump = currentChunk().count() - offset - 2;
     if (jump > std.math.maxInt(u16)) {
         errorAt(parser.current, "Too much code to jump over");
     }

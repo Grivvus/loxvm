@@ -107,6 +107,10 @@ pub const VM = struct {
                         vm.ip += offset;
                     }
                 },
+                @intFromEnum(OpCode.OP_LOOP) => {
+                    const offset = readShort(vm);
+                    vm.ip -= offset;
+                },
                 @intFromEnum(OpCode.OP_RETURN) => {
                     // debug.printValue(vm.pop());
                     // std.debug.print("\n", .{});
