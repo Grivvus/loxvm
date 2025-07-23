@@ -443,6 +443,8 @@ fn markInitialized(parser: *Parser) void {
 fn statement(parser: *Parser) CompilerError!void {
     if (parser.match(.PRINT)) {
         printStatement(parser) catch return CompilerError.CompilationError;
+    } else if (parser.match(.FOR)) {
+        forStatement(parser) catch return CompilerError.CompilationError;
     } else if (parser.match(.IF)) {
         ifStatement(parser) catch return CompilerError.CompilationError;
     } else if (parser.match(.WHILE)) {
@@ -460,6 +462,47 @@ fn printStatement(parser: *Parser) !void {
     try expression(parser);
     parser.consume(.SEMICOLON, "Expect ';' after value.");
     try emitOpcode(@intFromEnum(OpCode.OP_PRINT), parser);
+}
+
+fn forStatement(parser: *Parser) !void {
+    parser.compiler.beginScope();
+
+    parser.consume(.LEFT_PAREN, "Exect '(' after for");
+    if (parser.match(.SEMICOLON)) {} else if (parser.match(.VAR)) {
+        try varDeclaration(parser);
+    } else {
+        try expression(parser);
+    }
+    var loop_start = currentChunk().count();
+    var exit_jump: usize = undefined;
+    var exit_jump_defined: bool = false;
+    if (!parser.match(.SEMICOLON)) {
+        try expression(parser);
+        parser.consume(.SEMICOLON, "Expect ';' after loop condition");
+        exit_jump = try emitJump(parser, @intFromEnum(OpCode.OP_JUMP_IF_FALSE));
+        exit_jump_defined = true;
+        try emitOpcode(@intFromEnum(OpCode.OP_POP), parser);
+    }
+
+    if (!parser.match(.RIGHT_PAREN)) {
+        const body_jump = try emitJump(parser, @intFromEnum(OpCode.OP_JUMP));
+        const increment_start = currentChunk().count();
+        try expression(parser);
+        try emitOpcode(@intFromEnum(OpCode.OP_POP), parser);
+        parser.consume(.RIGHT_PAREN, "Expect ')' after for clauses");
+        try emitLoop(parser, loop_start);
+        loop_start = increment_start;
+        patchJump(parser, body_jump);
+    }
+
+    try statement(parser);
+    try emitLoop(parser, loop_start);
+    if (exit_jump_defined) {
+        patchJump(parser, exit_jump);
+        try emitOpcode(@intFromEnum(OpCode.OP_POP), parser);
+    }
+
+    try parser.compiler.endScope(parser);
 }
 
 fn whileStatement(parser: *Parser) !void {
