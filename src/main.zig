@@ -16,7 +16,7 @@ pub fn main() !void {
     const args = try std.process.argsAlloc(arena_alloc);
     defer std.process.argsFree(arena_alloc, args);
 
-    var vm = VM.init(arena_alloc);
+    var vm = try VM.init(arena_alloc);
     defer vm.deinit();
     if (args.len == 1) {
         try repl(&vm);

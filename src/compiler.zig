@@ -8,6 +8,7 @@ const OpCode = @import("bytecode.zig").OpCode;
 const Value = @import("value.zig").Value;
 const Object = object.Object;
 const ObjString = object.ObjString;
+const ObjFunction = object.ObjFunction;
 const Scanner = scanner.Scanner;
 const Token = scanner.Token;
 const TokenType = scanner.TokenType;
@@ -17,11 +18,18 @@ const Parser = struct {
     current: Token,
     hadError: bool,
     scanner: Scanner,
-    compiler: Compiler,
+    compiler: *Compiler,
     object_allocator: std.mem.Allocator,
 
-    pub fn init(sc: Scanner, compiler: Compiler, alloc: std.mem.Allocator) Parser {
-        return Parser{ .prev = undefined, .current = undefined, .hadError = false, .scanner = sc, .object_allocator = alloc, .compiler = compiler };
+    pub fn init(sc: Scanner, compiler: *Compiler, alloc: std.mem.Allocator) Parser {
+        return Parser{
+            .prev = undefined,
+            .current = undefined,
+            .hadError = false,
+            .scanner = sc,
+            .object_allocator = alloc,
+            .compiler = compiler,
+        };
     }
 
     pub fn advance(self: *Parser) void {
@@ -49,11 +57,19 @@ const Parser = struct {
         self.advance();
         return true;
     }
+    pub fn check(self: *Parser, type_: TokenType) bool {
+        return self.current.type_ == type_;
+    }
 };
 
 const Local = struct {
     name: Token,
     depth: i32,
+};
+
+const FunctionType = enum {
+    FUNCTION,
+    SCRIPT,
 };
 
 const CompilerError = error{
@@ -62,11 +78,40 @@ const CompilerError = error{
 };
 
 const Compiler = struct {
+    enclosing: ?*Compiler,
+    function: *ObjFunction,
+    function_type: FunctionType,
     locals: [256]Local,
     local_cnt: usize,
     scope_depth: i32,
-    pub fn init() Compiler {
-        return Compiler{ .locals = undefined, .local_cnt = 0, .scope_depth = 0 };
+    alloc: std.mem.Allocator,
+    pub fn init(
+        alloc: std.mem.Allocator,
+        function_type: FunctionType,
+        function_name: ?*ObjString,
+    ) !*Compiler {
+        var compiler = try alloc.create(Compiler);
+        compiler.enclosing = current_compiler;
+        compiler.locals = undefined;
+        compiler.local_cnt = 0;
+        compiler.scope_depth = 0;
+        compiler.function = try ObjFunction.init(alloc);
+        compiler.function.name = function_name;
+        compiler.function_type = function_type;
+        compiler.alloc = alloc;
+
+        current_compiler = compiler;
+
+        var local = &current_compiler.?.locals[current_compiler.?.local_cnt];
+        local.depth = 0;
+        local.name = Token.init(.IDENTIFIER, "", 0);
+        current_compiler.?.local_cnt += 1;
+
+        return compiler;
+    }
+    pub fn deinit(self: *Compiler) void {
+        self.function.deinit();
+        self.alloc.destroy(self);
     }
     pub fn beginScope(self: *Compiler) void {
         self.scope_depth += 1;
@@ -120,7 +165,7 @@ fn fillUpRules() void {
     const tt = TokenType;
     rules[@intFromEnum(tt.LEFT_PAREN)] = ParseRule{
         .prefix = grouping,
-        .infix = null,
+        .infix = call,
         .precedence = .NONE,
     };
     rules[@intFromEnum(tt.RIGHT_PAREN)] = ParseRule{
@@ -324,20 +369,19 @@ fn getRule(tt: TokenType) *ParseRule {
     return &rules[@intFromEnum(tt)];
 }
 
-var compiling_chunk: *Chunk = undefined;
-pub fn compile(source: []const u8, chunk: *Chunk, arena: std.mem.Allocator, obj_alloc: std.mem.Allocator) !void {
+var current_compiler: ?*Compiler = null;
+pub fn compile(source: []const u8, arena: std.mem.Allocator, obj_alloc: std.mem.Allocator) !*ObjFunction {
     fillUpRules();
     const sc = try scanner.Scanner.init(source, arena);
-    const compiler = Compiler.init();
+    const compiler = try Compiler.init(arena, .SCRIPT, null);
     var parser = Parser.init(sc, compiler, obj_alloc);
-    compiling_chunk = chunk;
     parser.advance();
     while (!parser.match(.EOF)) {
         try declaration(&parser);
     }
 
     parser.consume(.EOF, "expect end of expression");
-    try endCompiler(&parser);
+    return endCompiler(&parser);
 }
 
 fn expression(parser: *Parser) !void {
@@ -345,7 +389,9 @@ fn expression(parser: *Parser) !void {
 }
 
 fn declaration(parser: *Parser) !void {
-    if (parser.match(.VAR)) {
+    if (parser.match(.FUN)) {
+        try funDeclaration(parser);
+    } else if (parser.match(.VAR)) {
         try varDeclaration(parser);
     } else {
         try statement(parser);
@@ -362,6 +408,38 @@ fn varDeclaration(parser: *Parser) !void {
     }
     parser.consume(.SEMICOLON, "Expect ';' after variable declaration");
     try defineVariable(parser, global);
+}
+
+fn funDeclaration(parser: *Parser) !void {
+    const global = try parseVariable(parser, "Expect function name");
+    markInitialized(parser);
+    try function(parser, .FUNCTION, try ObjString.init(parser.prev.lexeme, parser.object_allocator));
+    try defineVariable(parser, global);
+}
+
+fn function(parser: *Parser, function_type: FunctionType, function_name: *ObjString) !void {
+    _ = try Compiler.init(parser.object_allocator, function_type, function_name);
+    parser.compiler.beginScope();
+    parser.consume(.LEFT_PAREN, "Expect '(' after function name");
+    if (!parser.check(.RIGHT_PAREN)) {
+        current_compiler.?.function.arity += 1;
+        const param_id = try parseVariable(parser, "Expect parameter name");
+        try defineVariable(parser, param_id);
+        while (parser.match(.COMMA)) {
+            current_compiler.?.function.arity += 1;
+            if (current_compiler.?.function.arity > 255) {
+                errorAt(parser.current, "Can't have more than 255 parameters");
+            }
+            const param_id_loop = try parseVariable(parser, "Expect parameter name");
+            try defineVariable(parser, param_id_loop);
+        }
+    }
+    parser.consume(.RIGHT_PAREN, "Expect ')' after function parameters");
+    parser.consume(.LEFT_BRACE, "Expect '{' before function body");
+    try blockStatement(parser);
+
+    const func = try endCompiler(parser);
+    try emitOpcodes(@intFromEnum(OpCode.OP_CONSTANT), try makeConstant(Value.initObject(Object.fromFunction(func))), parser);
 }
 
 fn parseVariable(parser: *Parser, msg: []const u8) !u8 {
@@ -435,8 +513,10 @@ fn or_(parser: *Parser, can_assign: bool) !void {
 }
 
 fn markInitialized(parser: *Parser) void {
+    if (parser.compiler.scope_depth == 0) {
+        return;
+    }
     const index = parser.compiler.local_cnt - 1;
-    std.debug.print("index {d} has been initialized with depth {d}\n", .{ index, parser.compiler.scope_depth });
     parser.compiler.locals[index].depth = parser.compiler.scope_depth;
 }
 
@@ -590,6 +670,30 @@ fn binary(parser: *Parser, can_assign: bool) !void {
     }
 }
 
+fn call(parser: *Parser, can_assign: bool) !void {
+    _ = can_assign;
+    const arg_count = try argumentList(parser);
+    try emitOpcodes(@intFromEnum(OpCode.OP_CALL), arg_count, parser);
+}
+
+fn argumentList(parser: *Parser) !u8 {
+    var arg_count: u8 = 0;
+    if (!parser.check(.RIGHT_PAREN)) {
+        try expression(parser);
+        arg_count += 1;
+        while (parser.match(.COMMA)) {
+            if (arg_count == 255) {
+                errorAt(parser.current, "Can't have more than 255 arguments");
+            }
+            try expression(parser);
+            arg_count += 1;
+        }
+    }
+    parser.consume(.RIGHT_PAREN, "Expect '(' after arguments");
+
+    return arg_count;
+}
+
 fn literal(parser: *Parser, can_assign: bool) !void {
     _ = can_assign;
     switch (parser.prev.type_) {
@@ -611,11 +715,14 @@ fn variable(parser: *Parser, can_assign: bool) !void {
     var set_op: u8 = undefined;
     const name = parser.prev;
     var arg: usize = undefined;
-    if (parser.compiler.resolve(name) != CompilerError.CantResolve) {
-        arg = try parser.compiler.resolve(name);
+    if (parser.compiler.resolve(name)) |index| {
+        arg = index;
         get_op = @intFromEnum(OpCode.OP_GET_LOCAL);
         set_op = @intFromEnum(OpCode.OP_SET_LOCAL);
-    } else {
+    } else |err| {
+        if (err != CompilerError.CantResolve) {
+            return err;
+        }
         arg = try identifierConstant(parser, name);
         get_op = @intFromEnum(OpCode.OP_GET_GLOBAL);
         set_op = @intFromEnum(OpCode.OP_SET_GLOBAL);
@@ -654,13 +761,19 @@ fn grouping(parser: *Parser, can_assign: bool) !void {
     parser.consume(.RIGHT_PAREN, "expect ')' after expression");
 }
 
-fn endCompiler(parser: *Parser) !void {
+fn endCompiler(parser: *Parser) !*ObjFunction {
     try emitOpcode(@intFromEnum(OpCode.OP_RETURN), parser);
+    const ret = parser.compiler.function;
     if (builtin.mode == .Debug) {
         if (parser.hadError == false) {
-            debug.disassembleChunk(currentChunk().*, "code");
+            debug.disassembleChunk(
+                currentChunk().*,
+                if (parser.compiler.function.name != null) parser.compiler.function.name.?.str else "<script>",
+            );
         }
     }
+    current_compiler = current_compiler.?.enclosing;
+    return ret;
 }
 
 fn emitOpcode(opcode: u8, parser: *Parser) !void {
@@ -709,7 +822,7 @@ fn makeConstant(value: Value) !u8 {
 
 fn currentChunk() *Chunk {
     // i hope at this moment compiling_chunk is not undefined
-    return compiling_chunk;
+    return &current_compiler.?.function.chunk;
 }
 
 pub fn errorAt(tok: Token, msg: []const u8) noreturn {

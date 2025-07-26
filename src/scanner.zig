@@ -53,7 +53,7 @@ pub const Token = struct {
     type_: TokenType,
     lexeme: []const u8,
     line: usize,
-    fn init(type_: TokenType, lexeme: []const u8, line: usize) Token {
+    pub fn init(type_: TokenType, lexeme: []const u8, line: usize) Token {
         return Token{
             .type_ = type_,
             .lexeme = lexeme,

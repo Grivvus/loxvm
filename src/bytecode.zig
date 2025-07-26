@@ -32,6 +32,7 @@ pub const OpCode = enum(u8) {
     OP_GREATER,
     OP_LESS,
     OP_LOOP,
+    OP_CALL,
 };
 
 pub const Chunk = struct {

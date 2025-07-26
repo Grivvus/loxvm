@@ -68,6 +68,9 @@ pub const Value = struct {
                     const v2_objstr = v2_obj.asObjString();
                     return std.mem.eql(u8, v1_objstr.str, v2_objstr.str);
                 },
+                .OBJ_FUNCTION => {
+                    @panic("not implemented");
+                },
             },
         };
     }
