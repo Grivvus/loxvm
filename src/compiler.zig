@@ -166,7 +166,7 @@ fn fillUpRules() void {
     rules[@intFromEnum(tt.LEFT_PAREN)] = ParseRule{
         .prefix = grouping,
         .infix = call,
-        .precedence = .NONE,
+        .precedence = .CALL,
     };
     rules[@intFromEnum(tt.RIGHT_PAREN)] = ParseRule{
         .prefix = null,

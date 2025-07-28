@@ -48,9 +48,10 @@ pub const VM = struct {
     chunk: *Chunk,
     frames: []CallFrame,
     frame_count: u32,
-    ip: [*]u8,
     stack: ArrayList(Value),
+    stack_top: [*]Value,
     globals: HashMap(Value),
+
     arena_alloc: Allocator,
     obj_alloc: Allocator,
     gpa: std.heap.GeneralPurposeAllocator(.{}),
@@ -61,13 +62,14 @@ pub const VM = struct {
             .chunk = undefined,
             .frames = try allocator.alloc(CallFrame, FRAMES_MAX),
             .frame_count = 0,
-            .ip = undefined,
             .stack = try ArrayList(Value).initCapacity(allocator, STACK_MAX_SIZE),
+            .stack_top = undefined,
             .globals = HashMap(Value).init(allocator),
             .arena_alloc = allocator,
             .gpa = gpa,
             .obj_alloc = gpa.allocator(),
         };
+        vm.stack_top = vm.stack.items.ptr;
         vm.resetStack();
         return vm;
     }
@@ -182,7 +184,7 @@ pub const VM = struct {
                     }
                     // there's happens some pointer magic, that i can't do with ArrayList
                     // should figure it out
-                    vm.stack.;
+                    vm.stack_top = frame.slots.items.ptr;
                     try vm.push(result);
                     frame = &vm.frames[vm.frame_count - 1];
                 },
@@ -333,20 +335,23 @@ pub const VM = struct {
     }
 
     inline fn readByte(vm: *VM) u8 {
-        const ret = vm.ip[0];
-        vm.ip += 1;
+        const curr_frame = &vm.frames[vm.frame_count - 1];
+        const ret = curr_frame.ip[0];
+        curr_frame.*.ip += 1;
         return ret;
     }
 
     inline fn readShort(vm: *VM) u16 {
-        const current_ip: u16 = @intCast(vm.ip[0]);
-        const offset = (current_ip << 8) | vm.ip[1];
-        vm.ip += 2;
+        const curr_frame = &vm.frames[vm.frame_count];
+        const current_ip: u16 = @intCast(curr_frame.ip[0]);
+        const offset = (current_ip << 8) | curr_frame.ip[1];
+        curr_frame.ip += 2;
         return offset;
     }
 
     inline fn readConstant(vm: *VM) Value {
-        return vm.chunk.constants.values.items[readByte(vm)];
+        return vm.frames[vm.frame_count - 1].function.chunk
+            .constants.values.items[readByte(vm)];
     }
 
     fn binOp(vm: *VM, comptime operator: BinOp) !InterpreterResult {
@@ -368,7 +373,8 @@ pub const VM = struct {
     fn concat(vm: *VM) !void {
         const str2 = vm.pop().asObject().asObjString();
         const str1 = vm.pop().asObject().asObjString();
-        var alloc_str = try vm.gpa.allocator().alloc(u8, str1.str.len + str2.str.len);
+        var alloc_str = try vm.gpa.allocator()
+            .alloc(u8, str1.str.len + str2.str.len);
         defer vm.obj_alloc.free(alloc_str);
         @memcpy(alloc_str[0..str1.str.len], str1.str);
         @memcpy(alloc_str[str1.str.len..], str2.str);
