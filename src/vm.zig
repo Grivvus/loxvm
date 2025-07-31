@@ -139,7 +139,7 @@ pub const VM = struct {
 
     pub fn interpret(vm: *VM, source: []const u8) !InterpreterResult {
         const function = try compiler.compile(source, vm.arena_alloc, vm.gpa.allocator()); // catch return InterpreterResult.INTERPRET_COMPILE_ERROR;
-        try vm.push(Value.initObject(try Object.initObjFunction(vm.gpa.allocator())));
+        try vm.push(Value.initObject(try Object.initObjFunction(vm.gpa.allocator(), null)));
         _ = try vm.call(function, 0);
 
         return vm.run() catch InterpreterResult.INTERPRET_RUNTIME_ERROR;

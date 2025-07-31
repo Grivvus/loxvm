@@ -22,10 +22,10 @@ pub const Object = struct {
         const objstring_ptr: *ObjString = self.asObjString();
         objstring_ptr.deinit(alloc);
     }
-    pub fn initObjFunction(alloc: std.mem.Allocator) !Object {
+    pub fn initObjFunction(alloc: std.mem.Allocator, name: ?*ObjString) !Object {
         return Object{
             .type_ = .OBJ_FUNCTION,
-            .mem = try ObjFunction.init(alloc),
+            .mem = try ObjFunction.init(alloc, name),
         };
     }
     pub fn fromFunction(function: *ObjFunction) Object {
@@ -59,13 +59,7 @@ pub const Object = struct {
     pub fn printObject(self: Object) void {
         switch (self.type_) {
             .OBJ_STRING => std.debug.print("{s}", .{self.asObjString().str}),
-            .OBJ_FUNCTION => {
-                if (self.asObjFunction().name != null) {
-                    std.debug.print("<fn {s}>", .{self.asObjFunction().name.?.str});
-                } else {
-                    std.debug.print("<script>", .{});
-                }
-            },
+            .OBJ_FUNCTION => self.asObjFunction().print(),
         }
     }
 };
@@ -92,18 +86,28 @@ pub const ObjFunction = struct {
     chunk: Chunk,
     name: ?*ObjString,
     alloc: std.mem.Allocator,
-    pub fn init(alloc: std.mem.Allocator) !*ObjFunction {
+    pub fn init(alloc: std.mem.Allocator, name: ?*ObjString) !*ObjFunction {
         var function = try alloc.create(ObjFunction);
         const chunk = Chunk.init(alloc);
         function.chunk = chunk;
         function.alloc = alloc;
         function.arity = 0;
-        function.name = null;
+        function.name = name;
         return function;
     }
     pub fn deinit(self: *ObjFunction) void {
         self.chunk.deinit();
-        self.name.deinit();
+        if (self.name != null) {
+            self.name.deinit();
+        }
         self.alloc.destroy(self);
+    }
+
+    pub fn print(self: *ObjFunction) void {
+        if (self.name != null) {
+            std.debug.print("<fn {s}>", .{self.name.?.str});
+        } else {
+            std.debug.print("<script>", .{});
+        }
     }
 };

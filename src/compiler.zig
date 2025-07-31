@@ -67,7 +67,7 @@ const Local = struct {
     depth: i32,
 };
 
-const FunctionType = enum {
+pub const FunctionType = enum {
     FUNCTION,
     SCRIPT,
 };
@@ -95,17 +95,14 @@ const Compiler = struct {
         compiler.locals = undefined;
         compiler.local_cnt = 0;
         compiler.scope_depth = 0;
-        compiler.function = try ObjFunction.init(alloc);
-        compiler.function.name = function_name;
+        compiler.function = try ObjFunction.init(alloc, function_name);
         compiler.function_type = function_type;
         compiler.alloc = alloc;
 
-        current_compiler = compiler;
-
-        var local = &current_compiler.?.locals[current_compiler.?.local_cnt];
+        var local = &compiler.locals[compiler.local_cnt];
         local.depth = 0;
         local.name = Token.init(.IDENTIFIER, "", 0);
-        current_compiler.?.local_cnt += 1;
+        compiler.local_cnt += 1;
 
         return compiler;
     }
@@ -374,6 +371,7 @@ pub fn compile(source: []const u8, arena: std.mem.Allocator, obj_alloc: std.mem.
     fillUpRules();
     const sc = try scanner.Scanner.init(source, arena);
     const compiler = try Compiler.init(arena, .SCRIPT, null);
+    current_compiler = compiler;
     var parser = Parser.init(sc, compiler, obj_alloc);
     parser.advance();
     while (!parser.match(.EOF)) {
@@ -418,7 +416,8 @@ fn funDeclaration(parser: *Parser) !void {
 }
 
 fn function(parser: *Parser, function_type: FunctionType, function_name: *ObjString) !void {
-    _ = try Compiler.init(parser.object_allocator, function_type, function_name);
+    const compiler = try Compiler.init(parser.object_allocator, function_type, function_name);
+    current_compiler = compiler;
     parser.compiler.beginScope();
     parser.consume(.LEFT_PAREN, "Expect '(' after function name");
     if (!parser.check(.RIGHT_PAREN)) {
@@ -768,7 +767,7 @@ fn endCompiler(parser: *Parser) !*ObjFunction {
         if (parser.hadError == false) {
             debug.disassembleChunk(
                 currentChunk().*,
-                if (parser.compiler.function.name != null) parser.compiler.function.name.?.str else "<script>",
+                if (current_compiler.?.function.name != null) current_compiler.?.function.name.?.str else "script",
             );
         }
     }
