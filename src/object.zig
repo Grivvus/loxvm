@@ -1,10 +1,14 @@
 const std = @import("std");
 const Chunk = @import("bytecode.zig").Chunk;
+const Value = @import("value.zig").Value;
 
 pub const ObjType = enum {
     OBJ_STRING,
     OBJ_FUNCTION,
+    OBJ_NATIVE,
 };
+
+pub const NativeFn = *const (fn (argc: usize, args: []Value) Value);
 
 pub const Object = struct {
     type_: ObjType,
@@ -40,11 +44,26 @@ pub const Object = struct {
         }
         self.asObjFunction().deinit();
     }
+    pub fn initObjNative(
+        alloc: std.mem.Allocator,
+        function: NativeFn,
+    ) !Object {
+        return Object{
+            .type_ = .OBJ_NATIVE,
+            .mem = try ObjNative.init(alloc, function),
+        };
+    }
+    pub fn deinitObjNative(self: *Object) void {
+        self.asObjFunction().deinit();
+    }
     pub fn isObjString(self: Object) bool {
         return self.type_ == .OBJ_STRING;
     }
     pub fn isObjFunction(self: Object) bool {
         return self.type_ == .OBJ_FUNCTION;
+    }
+    pub fn isObjNative(self: Object) bool {
+        return self.type_ == .OBJ_NATIVE;
     }
 
     pub fn asObjString(self: Object) *ObjString {
@@ -56,10 +75,15 @@ pub const Object = struct {
     pub fn asObjFunction(self: Object) *ObjFunction {
         return @ptrCast(@alignCast(self.mem));
     }
+    pub fn asObjNative(self: Object) *ObjNative {
+        return @ptrCast(@alignCast(self.mem));
+    }
+
     pub fn printObject(self: Object) void {
         switch (self.type_) {
             .OBJ_STRING => std.debug.print("{s}", .{self.asObjString().str}),
             .OBJ_FUNCTION => self.asObjFunction().print(),
+            .OBJ_NATIVE => std.debug.print("<native fn>", .{}),
         }
     }
 };
@@ -109,5 +133,20 @@ pub const ObjFunction = struct {
         } else {
             std.debug.print("<script>", .{});
         }
+    }
+};
+
+pub const ObjNative = struct {
+    function: NativeFn,
+    alloc: std.mem.Allocator,
+    fn init(alloc: std.mem.Allocator, function: NativeFn) !*ObjNative {
+        const obj_native = try alloc.create(ObjNative);
+        obj_native.*.function = function;
+        obj_native.*.alloc = alloc;
+        return obj_native;
+    }
+
+    fn deinit(self: *ObjNative) void {
+        self.alloc.destroy(self);
     }
 };

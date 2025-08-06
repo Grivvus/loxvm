@@ -18,6 +18,12 @@ const build_mode = @import("builtin").mode;
 const FRAMES_MAX = 64;
 const STACK_MAX_SIZE = FRAMES_MAX * std.math.maxInt(u8);
 
+fn clockNative(argc: usize, args: []Value) Value {
+    _ = argc;
+    _ = args;
+    return Value.initNumber(@floatFromInt(std.time.timestamp()));
+}
+
 pub const InterpreterError = error{
     BinOpError,
 };
@@ -68,6 +74,7 @@ pub const VM = struct {
             .obj_alloc = gpa.allocator(),
         };
         vm.resetStack();
+        try vm.defineNative("clock", clockNative);
         return vm;
     }
     pub fn deinit(self: *VM) void {
@@ -88,6 +95,16 @@ pub const VM = struct {
             switch (obj.type_) {
                 ObjType.OBJ_FUNCTION => {
                     return try self.call(obj.asObjFunction(), arg_count);
+                },
+                ObjType.OBJ_NATIVE => {
+                    const native_fn = obj.asObjNative().function;
+                    const result = native_fn(
+                        arg_count,
+                        self.stack[self.stack_top_index - arg_count .. self.stack_top_index],
+                    );
+                    self.stack_top_index -= arg_count + 1;
+                    self.push(result);
+                    return true;
                 },
                 else => {
                     _ = self.throw("Not callable object");
@@ -114,7 +131,7 @@ pub const VM = struct {
             .function = function,
             .ip = function.chunk.code.items.ptr,
             .slots = self.stack[0..],
-            .slots_start_index = self.stack_top_index,
+            .slots_start_index = self.stack_top_index - arg_count - 1,
         };
         return true;
     }
@@ -123,7 +140,7 @@ pub const VM = struct {
         self.stack_top_index = 0;
     }
     fn push(self: *VM, val: Value) void {
-        if (self.stack_top_index == STACK_MAX_SIZE - 1) {
+        if (self.stack_top_index >= STACK_MAX_SIZE) {
             @panic("Stack overflow");
         }
         self.stack[self.stack_top_index] = val;
@@ -189,7 +206,6 @@ pub const VM = struct {
                 },
                 @intFromEnum(OpCode.OP_CONSTANT) => {
                     const constant = readConstant(vm);
-                    constant.printValue();
                     vm.push(constant);
                     // debug.printValue(value);
                     // std.debug.print("\n", .{});
@@ -332,6 +348,27 @@ pub const VM = struct {
         return InterpreterResult.INTERPRET_RUNTIME_ERROR;
     }
 
+    fn defineNative(
+        self: *VM,
+        name: []const u8,
+        function: object.NativeFn,
+    ) !void {
+        self.push(Value.initObject(try Object.initObjString(
+            name,
+            self.obj_alloc,
+        )));
+        self.push(Value.initObject(try Object.initObjNative(
+            self.obj_alloc,
+            function,
+        )));
+        try self.globals.put(
+            self.stack[0].asObject().asObjString().str,
+            self.stack[1],
+        );
+        _ = self.pop();
+        _ = self.pop();
+    }
+
     inline fn readByte(vm: *VM) u8 {
         const curr_frame = &vm.frames[vm.frame_count - 1];
         const ret = curr_frame.ip[0];
@@ -340,7 +377,7 @@ pub const VM = struct {
     }
 
     inline fn readShort(vm: *VM) u16 {
-        const curr_frame = &vm.frames[vm.frame_count];
+        const curr_frame = &vm.frames[vm.frame_count - 1];
         const current_ip: u16 = @intCast(curr_frame.ip[0]);
         const offset = (current_ip << 8) | curr_frame.ip[1];
         curr_frame.ip += 2;
