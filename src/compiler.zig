@@ -536,6 +536,8 @@ fn statement(parser: *Parser) CompilerError!void {
         forStatement(parser) catch return CompilerError.CompilationError;
     } else if (parser.match(.IF)) {
         ifStatement(parser) catch return CompilerError.CompilationError;
+    } else if (parser.match(.RETURN)) {
+        returnStatement(parser) catch return CompilerError.CompilationError;
     } else if (parser.match(.WHILE)) {
         whileStatement(parser) catch return CompilerError.CompilationError;
     } else if (parser.match(.LEFT_BRACE)) {
@@ -549,8 +551,21 @@ fn statement(parser: *Parser) CompilerError!void {
 
 fn printStatement(parser: *Parser) !void {
     try expression(parser);
-    parser.consume(.SEMICOLON, "Expect ';' after value.");
+    parser.consume(.SEMICOLON, "Expect ';' after value");
     try emitOpcode(@intFromEnum(OpCode.OP_PRINT), parser);
+}
+
+fn returnStatement(parser: *Parser) !void {
+    if (current_compiler.?.function_type == .SCRIPT) {
+        errorAt(parser.prev, "Can't return from top-level code");
+    }
+    if (parser.match(.SEMICOLON)) {
+        try emitReturn(parser);
+    } else {
+        try expression(parser);
+        parser.consume(.SEMICOLON, "Expect ';' after return value");
+        try emitOpcode(@intFromEnum(OpCode.OP_RETURN), parser);
+    }
 }
 
 fn forStatement(parser: *Parser) !void {
