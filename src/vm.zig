@@ -40,16 +40,15 @@ pub const BinOp = enum {
 pub const CallFrame = struct {
     function: *ObjFunction,
     ip: [*]u8,
-    slots: ArrayList(Value),
+    slots: []Value,
     slots_start_index: usize,
 };
 
 pub const VM = struct {
-    chunk: *Chunk,
     frames: []CallFrame,
     frame_count: u32,
-    stack: ArrayList(Value),
-    stack_top: [*]Value,
+    stack: [STACK_MAX_SIZE]Value,
+    stack_top_index: usize,
     globals: HashMap(Value),
 
     arena_alloc: Allocator,
@@ -59,31 +58,28 @@ pub const VM = struct {
     pub fn init(allocator: Allocator) !VM {
         var gpa = std.heap.GeneralPurposeAllocator(.{}){};
         var vm = VM{
-            .chunk = undefined,
             .frames = try allocator.alloc(CallFrame, FRAMES_MAX),
             .frame_count = 0,
-            .stack = try ArrayList(Value).initCapacity(allocator, STACK_MAX_SIZE),
-            .stack_top = undefined,
+            .stack = undefined,
+            .stack_top_index = 0,
             .globals = HashMap(Value).init(allocator),
             .arena_alloc = allocator,
             .gpa = gpa,
             .obj_alloc = gpa.allocator(),
         };
-        vm.stack_top = vm.stack.items.ptr;
         vm.resetStack();
         return vm;
     }
     pub fn deinit(self: *VM) void {
         self.arena_alloc.free(self.frames);
         self.globals.deinit();
-        self.stack.deinit();
         const leaked = self.gpa.deinit();
         if (leaked == .leak) {
             std.log.err("Memory leak detected in object allocator", .{});
         }
     }
     fn peek(self: *VM, offset: usize) Value {
-        return self.stack.items[self.stack.items.len - 1 - offset];
+        return self.stack[self.stack_top_index - 1 - offset];
     }
 
     fn callValue(self: *VM, callee: Value, arg_count: u8) !bool {
@@ -117,29 +113,34 @@ pub const VM = struct {
         frame.* = .{
             .function = function,
             .ip = function.chunk.code.items.ptr,
-            .slots = self.stack,
-            .slots_start_index = self.stack.items.len - 1 - arg_count,
+            .slots = self.stack[0..],
+            .slots_start_index = self.stack_top_index,
         };
         return true;
     }
 
     fn resetStack(self: *VM) void {
-        self.stack.clearRetainingCapacity();
+        self.stack_top_index = 0;
     }
-    fn push(self: *VM, val: Value) !void {
-        try self.stack.append(val);
+    fn push(self: *VM, val: Value) void {
+        if (self.stack_top_index == STACK_MAX_SIZE - 1) {
+            @panic("Stack overflow");
+        }
+        self.stack[self.stack_top_index] = val;
+        self.stack_top_index += 1;
     }
     fn pop(self: *VM) Value {
-        const val = self.stack.pop();
-        if (val == null) {
+        if (self.stack_top_index == 0) {
             @panic("Poped from empty stack");
         }
-        return val.?;
+        self.stack_top_index -= 1;
+        const val = self.stack[self.stack_top_index];
+        return val;
     }
 
     pub fn interpret(vm: *VM, source: []const u8) !InterpreterResult {
         const function = try compiler.compile(source, vm.arena_alloc, vm.gpa.allocator()); // catch return InterpreterResult.INTERPRET_COMPILE_ERROR;
-        try vm.push(Value.initObject(try Object.initObjFunction(vm.gpa.allocator(), null)));
+        vm.push(Value.initObject(try Object.initObjFunction(vm.gpa.allocator(), null)));
         _ = try vm.call(function, 0);
 
         return vm.run() catch InterpreterResult.INTERPRET_RUNTIME_ERROR;
@@ -150,9 +151,9 @@ pub const VM = struct {
         while (true) {
             if (build_mode == .Debug) {
                 std.debug.print("        ", .{});
-                for (vm.stack.items) |slot| {
+                for (0..vm.stack_top_index) |index| {
                     std.debug.print("[ ", .{});
-                    debug.printValue(slot);
+                    debug.printValue(vm.stack[index]);
                     std.debug.print(" ]", .{});
                 }
                 std.debug.print("\n", .{});
@@ -182,33 +183,31 @@ pub const VM = struct {
                         _ = pop(vm);
                         return InterpreterResult.INTERPRET_OK;
                     }
-                    // there's happens some pointer magic, that i can't do with ArrayList
-                    // should figure it out
-                    vm.stack_top = frame.slots.items.ptr;
-                    try vm.push(result);
+                    vm.stack_top_index = frame.slots_start_index;
+                    vm.push(result);
                     frame = &vm.frames[vm.frame_count - 1];
                 },
                 @intFromEnum(OpCode.OP_CONSTANT) => {
                     const constant = readConstant(vm);
                     constant.printValue();
-                    try vm.push(constant);
+                    vm.push(constant);
                     // debug.printValue(value);
                     // std.debug.print("\n", .{});
                 },
                 @intFromEnum(OpCode.OP_NIL) => {
-                    try vm.push(Value.initNil());
+                    vm.push(Value.initNil());
                 },
                 @intFromEnum(OpCode.OP_TRUE) => {
-                    try vm.push(Value.initBoolean(true));
+                    vm.push(Value.initBoolean(true));
                 },
                 @intFromEnum(OpCode.OP_FALSE) => {
-                    try vm.push(Value.initBoolean(false));
+                    vm.push(Value.initBoolean(false));
                 },
                 @intFromEnum(OpCode.OP_NEGATE) => {
                     if (!vm.peek(0).isNumber()) {
                         return vm.throw("Operand must be a number");
                     }
-                    try vm.push(Value.initNumber(-vm.pop().asNumber()));
+                    vm.push(Value.initNumber(-vm.pop().asNumber()));
                 },
                 @intFromEnum(OpCode.OP_ADD) => {
                     if (vm.peek(0).isObject() and vm.peek(0).asObject().isObjString() and vm.peek(1).isObject() and vm.peek(1).asObject().isObjString()) {
@@ -244,12 +243,12 @@ pub const VM = struct {
                         else => {},
                     }
                 },
-                @intFromEnum(OpCode.OP_NOT) => try vm.push(Value.initBoolean(isFalsey(vm.pop()))),
+                @intFromEnum(OpCode.OP_NOT) => vm.push(Value.initBoolean(isFalsey(vm.pop()))),
                 @intFromEnum(OpCode.OP_EQUAL) => {
                     const v2 = vm.pop();
                     const v1 = vm.pop();
                     const res = Value.isEqual(v1, v2);
-                    try vm.push(Value.initBoolean(res));
+                    vm.push(Value.initBoolean(res));
                 },
                 @intFromEnum(OpCode.OP_GREATER) => {
                     const res = try vm.binOp(BinOp.GREATER);
@@ -283,7 +282,7 @@ pub const VM = struct {
                     if (value == null) {
                         return throw(vm, try std.fmt.allocPrint(vm.arena_alloc, "Undefined variable '{s}'", .{name.str}));
                     }
-                    try vm.push(value.?);
+                    vm.push(value.?);
                 },
                 @intFromEnum(OpCode.OP_SET_GLOBAL) => {
                     const name = readConstant(vm).asObject().asObjString();
@@ -294,11 +293,11 @@ pub const VM = struct {
                 },
                 @intFromEnum(OpCode.OP_GET_LOCAL) => {
                     const slot = readByte(vm);
-                    try vm.push(frame.slots.items[slot]);
+                    vm.push(frame.slots[slot + frame.slots_start_index]);
                 },
                 @intFromEnum(OpCode.OP_SET_LOCAL) => {
                     const slot = readByte(vm);
-                    frame.slots.items[slot] = vm.peek(0);
+                    frame.slots[slot + frame.slots_start_index] = vm.peek(0);
                 },
                 @intFromEnum(OpCode.OP_CALL) => {
                     const arg_count = readByte(vm);
@@ -307,15 +306,14 @@ pub const VM = struct {
                     }
                     const current_frame = vm.frames[vm.frame_count - 1];
                     _ = current_frame;
-                    @panic("Not implemented");
                 },
                 else => {
                     std.debug.print("Unkown instruction {d}\n", .{instruction});
                     @panic("Error");
                 },
             }
-            return InterpreterResult.INTERPRET_OK;
         }
+        return InterpreterResult.INTERPRET_OK;
     }
 
     fn throw(self: *VM, msg: []const u8) InterpreterResult {
@@ -361,12 +359,12 @@ pub const VM = struct {
         const op_right = vm.pop();
         const op_left = vm.pop();
         switch (operator) {
-            BinOp.PLUS => try vm.push(Value.initNumber(op_left.asNumber() + op_right.asNumber())),
-            BinOp.MINUS => try vm.push(Value.initNumber(op_left.asNumber() - op_right.asNumber())),
-            BinOp.MULTIPLY => try vm.push(Value.initNumber(op_left.asNumber() * op_right.asNumber())),
-            BinOp.DIVIDE => try vm.push(Value.initNumber(op_left.asNumber() / op_right.asNumber())),
-            BinOp.GREATER => try vm.push(Value.initBoolean(op_left.asNumber() > op_right.asNumber())),
-            BinOp.LESS => try vm.push(Value.initBoolean(op_left.asNumber() < op_right.asNumber())),
+            BinOp.PLUS => vm.push(Value.initNumber(op_left.asNumber() + op_right.asNumber())),
+            BinOp.MINUS => vm.push(Value.initNumber(op_left.asNumber() - op_right.asNumber())),
+            BinOp.MULTIPLY => vm.push(Value.initNumber(op_left.asNumber() * op_right.asNumber())),
+            BinOp.DIVIDE => vm.push(Value.initNumber(op_left.asNumber() / op_right.asNumber())),
+            BinOp.GREATER => vm.push(Value.initBoolean(op_left.asNumber() > op_right.asNumber())),
+            BinOp.LESS => vm.push(Value.initBoolean(op_left.asNumber() < op_right.asNumber())),
         }
         return InterpreterResult.INTERPRET_OK;
     }
@@ -378,7 +376,7 @@ pub const VM = struct {
         defer vm.obj_alloc.free(alloc_str);
         @memcpy(alloc_str[0..str1.str.len], str1.str);
         @memcpy(alloc_str[str1.str.len..], str2.str);
-        try vm.push(Value.initObject(try Object.initObjString(
+        vm.push(Value.initObject(try Object.initObjString(
             alloc_str[0..],
             vm.gpa.allocator(),
         )));
