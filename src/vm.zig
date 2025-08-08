@@ -130,7 +130,7 @@ pub const VM = struct {
         frame.* = .{
             .function = function,
             .ip = function.chunk.code.items.ptr,
-            .slots = self.stack[0..],
+            .slots = &self.stack,
             .slots_start_index = self.stack_top_index - arg_count - 1,
         };
         return true;
@@ -320,8 +320,7 @@ pub const VM = struct {
                     if (!(try callValue(vm, vm.peek(arg_count), arg_count))) {
                         return vm.throw("Error while calling");
                     }
-                    const current_frame = vm.frames[vm.frame_count - 1];
-                    _ = current_frame;
+                    frame = &vm.frames[vm.frame_count - 1];
                 },
                 else => {
                     std.debug.print("Unkown instruction {d}\n", .{instruction});
