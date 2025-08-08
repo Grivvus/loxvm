@@ -115,7 +115,7 @@ const Compiler = struct {
         self.scope_depth -= 1;
 
         while (self.local_cnt > 0 and self.locals[self.local_cnt - 1].depth > self.scope_depth) {
-            try emitOpcode(@intFromEnum(OpCode.OP_POP), parser);
+            try emitOpcode(parser, @intFromEnum(OpCode.OP_POP));
             self.local_cnt -= 1;
         }
     }
@@ -126,7 +126,8 @@ const Compiler = struct {
             const local = &self.locals[i];
             if (std.mem.eql(u8, local.name.lexeme, name.lexeme)) {
                 if (local.*.depth == -1) {
-                    errorAt(name, "Can't read local variable in it's own initializer");
+                    const msg = "Can't read local variable in it's own initializer";
+                    errorAt(name, msg);
                 }
                 return i;
             }
@@ -365,7 +366,11 @@ fn getRule(tt: TokenType) *ParseRule {
 }
 
 var current_compiler: ?*Compiler = null;
-pub fn compile(source: []const u8, arena: std.mem.Allocator, obj_alloc: std.mem.Allocator) !*ObjFunction {
+pub fn compile(
+    source: []const u8,
+    arena: std.mem.Allocator,
+    obj_alloc: std.mem.Allocator,
+) !*ObjFunction {
     fillUpRules();
     const sc = try scanner.Scanner.init(source, arena);
     const compiler = try Compiler.init(arena, .SCRIPT, null);
@@ -400,7 +405,7 @@ fn varDeclaration(parser: *Parser) !void {
     if (parser.match(.EQUAL)) {
         try expression(parser);
     } else {
-        try emitOpcode(@intFromEnum(OpCode.OP_NIL), parser);
+        try emitOpcode(parser, @intFromEnum(OpCode.OP_NIL));
     }
     parser.consume(.SEMICOLON, "Expect ';' after variable declaration");
     try defineVariable(parser, global);
@@ -409,7 +414,11 @@ fn varDeclaration(parser: *Parser) !void {
 fn funDeclaration(parser: *Parser) !void {
     const global = try parseVariable(parser, "Expect function name");
     markInitialized(parser);
-    try function(parser, .FUNCTION, try ObjString.init(parser.prev.lexeme, parser.object_allocator));
+    try function(
+        parser,
+        .FUNCTION,
+        try ObjString.init(parser.prev.lexeme, parser.object_allocator),
+    );
     try defineVariable(parser, global);
 }
 
@@ -435,7 +444,10 @@ fn function(
             if (current_compiler.?.function.arity > 255) {
                 errorAt(parser.current, "Can't have more than 255 parameters");
             }
-            const param_id_loop = try parseVariable(parser, "Expect parameter name");
+            const param_id_loop = try parseVariable(
+                parser,
+                "Expect parameter name",
+            );
             try defineVariable(parser, param_id_loop);
         }
     }
@@ -445,9 +457,9 @@ fn function(
 
     const func = try endCompiler(parser);
     try emitOpcodes(
+        parser,
         @intFromEnum(OpCode.OP_CONSTANT),
         try makeConstant(Value.initObject(Object.fromFunction(func))),
-        parser,
     );
 }
 
@@ -461,7 +473,12 @@ fn parseVariable(parser: *Parser, msg: []const u8) !u8 {
 }
 
 fn identifierConstant(parser: *Parser, name: Token) !u8 {
-    return try makeConstant(Value.initObject(try Object.initObjString(name.lexeme, parser.object_allocator)));
+    return try makeConstant(Value.initObject(
+        try Object.initObjString(
+            name.lexeme,
+            parser.object_allocator,
+        ),
+    ));
 }
 
 fn declareVarible(parser: *Parser) !void {
@@ -500,23 +517,33 @@ fn defineVariable(parser: *Parser, identifier_constant: u8) !void {
         markInitialized(parser);
         return;
     }
-    try emitOpcodes(@intFromEnum(OpCode.OP_DEFINE_GLOBAL), identifier_constant, parser);
+    try emitOpcodes(
+        parser,
+        @intFromEnum(OpCode.OP_DEFINE_GLOBAL),
+        identifier_constant,
+    );
 }
 
 fn and_(parser: *Parser, can_assign: bool) !void {
     _ = can_assign;
-    const and_jump = try emitJump(parser, @intFromEnum(OpCode.OP_JUMP_IF_FALSE));
-    try emitOpcode(@intFromEnum(OpCode.OP_POP), parser);
+    const and_jump = try emitJump(
+        parser,
+        @intFromEnum(OpCode.OP_JUMP_IF_FALSE),
+    );
+    try emitOpcode(parser, @intFromEnum(OpCode.OP_POP));
     try parsePrecedence(.AND, parser);
     patchJump(parser, and_jump);
 }
 
 fn or_(parser: *Parser, can_assign: bool) !void {
     _ = can_assign;
-    const else_jump = try emitJump(parser, @intFromEnum(OpCode.OP_JUMP_IF_FALSE));
+    const else_jump = try emitJump(
+        parser,
+        @intFromEnum(OpCode.OP_JUMP_IF_FALSE),
+    );
     const then_jump = try emitJump(parser, @intFromEnum(OpCode.OP_JUMP));
     patchJump(parser, else_jump);
-    try emitOpcode(@intFromEnum(OpCode.OP_POP), parser);
+    try emitOpcode(parser, @intFromEnum(OpCode.OP_POP));
     try parsePrecedence(.OR, parser);
     patchJump(parser, then_jump);
 }
@@ -552,7 +579,7 @@ fn statement(parser: *Parser) CompilerError!void {
 fn printStatement(parser: *Parser) !void {
     try expression(parser);
     parser.consume(.SEMICOLON, "Expect ';' after value");
-    try emitOpcode(@intFromEnum(OpCode.OP_PRINT), parser);
+    try emitOpcode(parser, @intFromEnum(OpCode.OP_PRINT));
 }
 
 fn returnStatement(parser: *Parser) !void {
@@ -564,7 +591,7 @@ fn returnStatement(parser: *Parser) !void {
     } else {
         try expression(parser);
         parser.consume(.SEMICOLON, "Expect ';' after return value");
-        try emitOpcode(@intFromEnum(OpCode.OP_RETURN), parser);
+        try emitOpcode(parser, @intFromEnum(OpCode.OP_RETURN));
     }
 }
 
@@ -585,14 +612,14 @@ fn forStatement(parser: *Parser) !void {
         parser.consume(.SEMICOLON, "Expect ';' after loop condition");
         exit_jump = try emitJump(parser, @intFromEnum(OpCode.OP_JUMP_IF_FALSE));
         exit_jump_defined = true;
-        try emitOpcode(@intFromEnum(OpCode.OP_POP), parser);
+        try emitOpcode(parser, @intFromEnum(OpCode.OP_POP));
     }
 
     if (!parser.match(.RIGHT_PAREN)) {
         const body_jump = try emitJump(parser, @intFromEnum(OpCode.OP_JUMP));
         const increment_start = currentChunk().count();
         try expression(parser);
-        try emitOpcode(@intFromEnum(OpCode.OP_POP), parser);
+        try emitOpcode(parser, @intFromEnum(OpCode.OP_POP));
         parser.consume(.RIGHT_PAREN, "Expect ')' after for clauses");
         try emitLoop(parser, loop_start);
         loop_start = increment_start;
@@ -603,7 +630,7 @@ fn forStatement(parser: *Parser) !void {
     try emitLoop(parser, loop_start);
     if (exit_jump_defined) {
         patchJump(parser, exit_jump);
-        try emitOpcode(@intFromEnum(OpCode.OP_POP), parser);
+        try emitOpcode(parser, @intFromEnum(OpCode.OP_POP));
     }
 
     try current_compiler.?.endScope(parser);
@@ -614,12 +641,15 @@ fn whileStatement(parser: *Parser) !void {
     parser.consume(.LEFT_PAREN, "Expect '(' after while");
     try expression(parser);
     parser.consume(.RIGHT_PAREN, "Expect ')' after condition");
-    const exit_jump = try emitJump(parser, @intFromEnum(OpCode.OP_JUMP_IF_FALSE));
-    try emitOpcode(@intFromEnum(OpCode.OP_POP), parser);
+    const exit_jump = try emitJump(
+        parser,
+        @intFromEnum(OpCode.OP_JUMP_IF_FALSE),
+    );
+    try emitOpcode(parser, @intFromEnum(OpCode.OP_POP));
     try statement(parser);
     try emitLoop(parser, loop_start);
     patchJump(parser, exit_jump);
-    try emitOpcode(@intFromEnum(OpCode.OP_POP), parser);
+    try emitOpcode(parser, @intFromEnum(OpCode.OP_POP));
 }
 
 fn ifStatement(parser: *Parser) CompilerError!void {
@@ -627,12 +657,24 @@ fn ifStatement(parser: *Parser) CompilerError!void {
     parser.consume(.LEFT_PAREN, "Expect '(' after 'if'");
     expression(parser) catch return CompilerError.CompilationError;
     parser.consume(.RIGHT_PAREN, "Expect ')' after condition");
-    const thenJump = emitJump(parser, @intFromEnum(OpCode.OP_JUMP_IF_FALSE)) catch return CompilerError.CompilationError;
-    emitOpcode(@intFromEnum(OpCode.OP_POP), parser) catch return CompilerError.CompilationError;
+    const thenJump = emitJump(
+        parser,
+        @intFromEnum(OpCode.OP_JUMP_IF_FALSE),
+    ) catch return CompilerError.CompilationError;
+    emitOpcode(
+        parser,
+        @intFromEnum(OpCode.OP_POP),
+    ) catch return CompilerError.CompilationError;
     statement(parser) catch return CompilerError.CompilationError;
-    const elseJump = emitJump(parser, @intFromEnum(OpCode.OP_JUMP)) catch return CompilerError.CompilationError;
+    const elseJump = emitJump(
+        parser,
+        @intFromEnum(OpCode.OP_JUMP),
+    ) catch return CompilerError.CompilationError;
     patchJump(parser, thenJump);
-    emitOpcode(@intFromEnum(OpCode.OP_POP), parser) catch return CompilerError.CompilationError;
+    emitOpcode(
+        parser,
+        @intFromEnum(OpCode.OP_POP),
+    ) catch return CompilerError.CompilationError;
     if (parser.match(.ELSE)) {
         statement(parser) catch return CompilerError.CompilationError;
     }
@@ -650,13 +692,13 @@ fn blockStatement(parser: *Parser) CompilerError!void {
 fn expressionStatement(parser: *Parser) !void {
     try expression(parser);
     parser.consume(.SEMICOLON, "Expect ';' after expression.");
-    try emitOpcode(@intFromEnum(OpCode.OP_POP), parser);
+    try emitOpcode(parser, @intFromEnum(OpCode.OP_POP));
 }
 
 fn number(parser: *Parser, can_assign: bool) !void {
     _ = can_assign;
     const parsed_value = try std.fmt.parseFloat(f64, parser.prev.lexeme);
-    try emitConstant(Value.initNumber(parsed_value), parser);
+    try emitConstant(parser, Value.initNumber(parsed_value));
 }
 
 fn unary(parser: *Parser, can_assign: bool) !void {
@@ -666,8 +708,8 @@ fn unary(parser: *Parser, can_assign: bool) !void {
     try parsePrecedence(.UNARY, parser);
 
     switch (operator_type) {
-        .BANG => try emitOpcode(@intFromEnum(OpCode.OP_NOT), parser),
-        .MINUS => try emitOpcode(@intFromEnum(OpCode.OP_NEGATE), parser),
+        .BANG => try emitOpcode(parser, @intFromEnum(OpCode.OP_NOT)),
+        .MINUS => try emitOpcode(parser, @intFromEnum(OpCode.OP_NEGATE)),
         else => unreachable,
     }
 }
@@ -679,17 +721,35 @@ fn binary(parser: *Parser, can_assign: bool) !void {
     try parsePrecedence(rule.precedence, parser);
 
     switch (operator_type) {
-        .BANG_EQUAL => try emitOpcodes(@intFromEnum(OpCode.OP_EQUAL), @intFromEnum(OpCode.OP_NOT), parser),
-        .EQUAL_EQUAL => try emitOpcode(@intFromEnum(OpCode.OP_EQUAL), parser),
-        .GREATER => try emitOpcode(@intFromEnum(OpCode.OP_GREATER), parser),
-        .GREATER_EQUAL => try emitOpcodes(@intFromEnum(OpCode.OP_LESS), @intFromEnum(OpCode.OP_NOT), parser),
-        .LESS => try emitOpcode(@intFromEnum(OpCode.OP_LESS), parser),
-        .LESS_EQUAL => try emitOpcodes(@intFromEnum(OpCode.OP_GREATER), @intFromEnum(OpCode.OP_NOT), parser),
+        .BANG_EQUAL => try emitOpcodes(
+            parser,
+            @intFromEnum(OpCode.OP_EQUAL),
+            @intFromEnum(OpCode.OP_NOT),
+        ),
+        .EQUAL_EQUAL => try emitOpcode(parser, @intFromEnum(OpCode.OP_EQUAL)),
+        .GREATER => try emitOpcode(
+            parser,
+            @intFromEnum(OpCode.OP_GREATER),
+        ),
+        .GREATER_EQUAL => try emitOpcodes(
+            parser,
+            @intFromEnum(OpCode.OP_LESS),
+            @intFromEnum(OpCode.OP_NOT),
+        ),
+        .LESS => try emitOpcode(
+            parser,
+            @intFromEnum(OpCode.OP_LESS),
+        ),
+        .LESS_EQUAL => try emitOpcodes(
+            parser,
+            @intFromEnum(OpCode.OP_GREATER),
+            @intFromEnum(OpCode.OP_NOT),
+        ),
 
-        .PLUS => try emitOpcode(@intFromEnum(OpCode.OP_ADD), parser),
-        .MINUS => try emitOpcode(@intFromEnum(OpCode.OP_SUBSTRUCT), parser),
-        .STAR => try emitOpcode(@intFromEnum(OpCode.OP_MULTIPLY), parser),
-        .SLASH => try emitOpcode(@intFromEnum(OpCode.OP_DIVIDE), parser),
+        .PLUS => try emitOpcode(parser, @intFromEnum(OpCode.OP_ADD)),
+        .MINUS => try emitOpcode(parser, @intFromEnum(OpCode.OP_SUBSTRUCT)),
+        .STAR => try emitOpcode(parser, @intFromEnum(OpCode.OP_MULTIPLY)),
+        .SLASH => try emitOpcode(parser, @intFromEnum(OpCode.OP_DIVIDE)),
         else => unreachable,
     }
 }
@@ -697,7 +757,7 @@ fn binary(parser: *Parser, can_assign: bool) !void {
 fn call(parser: *Parser, can_assign: bool) !void {
     _ = can_assign;
     const arg_count = try argumentList(parser);
-    try emitOpcodes(@intFromEnum(OpCode.OP_CALL), arg_count, parser);
+    try emitOpcodes(parser, @intFromEnum(OpCode.OP_CALL), arg_count);
 }
 
 fn argumentList(parser: *Parser) !u8 {
@@ -721,17 +781,22 @@ fn argumentList(parser: *Parser) !u8 {
 fn literal(parser: *Parser, can_assign: bool) !void {
     _ = can_assign;
     switch (parser.prev.type_) {
-        .FALSE => try emitOpcode(@intFromEnum(OpCode.OP_FALSE), parser),
-        .TRUE => try emitOpcode(@intFromEnum(OpCode.OP_TRUE), parser),
-        .NIL => try emitOpcode(@intFromEnum(OpCode.OP_NIL), parser),
+        .FALSE => try emitOpcode(parser, @intFromEnum(OpCode.OP_FALSE)),
+        .TRUE => try emitOpcode(parser, @intFromEnum(OpCode.OP_TRUE)),
+        .NIL => try emitOpcode(parser, @intFromEnum(OpCode.OP_NIL)),
         else => unreachable,
     }
 }
 
 fn string(parser: *Parser, can_assign: bool) !void {
     _ = can_assign;
-    const value = Value.initObject(try object.Object.initObjString(parser.prev.lexeme, parser.object_allocator));
-    try emitConstant(value, parser);
+    const value = Value.initObject(
+        try object.Object.initObjString(
+            parser.prev.lexeme,
+            parser.object_allocator,
+        ),
+    );
+    try emitConstant(parser, value);
 }
 
 fn variable(parser: *Parser, can_assign: bool) !void {
@@ -753,9 +818,9 @@ fn variable(parser: *Parser, can_assign: bool) !void {
     }
     if (can_assign and parser.match(.EQUAL)) {
         try expression(parser);
-        try emitOpcodes(set_op, @intCast(arg), parser);
+        try emitOpcodes(parser, set_op, @intCast(arg));
     } else {
-        try emitOpcodes(get_op, @intCast(arg), parser);
+        try emitOpcodes(parser, get_op, @intCast(arg));
     }
 }
 
@@ -800,39 +865,43 @@ fn endCompiler(parser: *Parser) !*ObjFunction {
     return ret;
 }
 
-fn emitOpcode(opcode: u8, parser: *Parser) !void {
+fn emitOpcode(parser: *Parser, opcode: u8) !void {
     try currentChunk().write(opcode, parser.prev.line);
 }
 
-fn emitOpcodes(op1: u8, op2: u8, parser: *Parser) !void {
-    try emitOpcode(op1, parser);
-    try emitOpcode(op2, parser);
+fn emitOpcodes(parser: *Parser, op1: u8, op2: u8) !void {
+    try emitOpcode(parser, op1);
+    try emitOpcode(parser, op2);
 }
 
 fn emitReturn(parser: *Parser) !void {
-    try emitOpcode(@intFromEnum(OpCode.OP_NIL), parser);
-    try emitOpcode(@intFromEnum(OpCode.OP_RETURN), parser);
+    try emitOpcode(parser, @intFromEnum(OpCode.OP_NIL));
+    try emitOpcode(parser, @intFromEnum(OpCode.OP_RETURN));
 }
 
 fn emitJump(parser: *Parser, jmp: u8) !usize {
-    try emitOpcode(jmp, parser);
-    try emitOpcode(0xff, parser);
-    try emitOpcode(0xff, parser);
+    try emitOpcode(parser, jmp);
+    try emitOpcode(parser, 0xff);
+    try emitOpcode(parser, 0xff);
     return currentChunk().count() - 2;
 }
 
-fn emitConstant(value: Value, parser: *Parser) !void {
-    try emitOpcodes(@intFromEnum(OpCode.OP_CONSTANT), try makeConstant(value), parser);
+fn emitConstant(parser: *Parser, value: Value) !void {
+    try emitOpcodes(
+        parser,
+        @intFromEnum(OpCode.OP_CONSTANT),
+        try makeConstant(value),
+    );
 }
 
 fn emitLoop(parser: *Parser, loop_start: usize) !void {
-    try emitOpcode(@intFromEnum(OpCode.OP_LOOP), parser);
+    try emitOpcode(parser, @intFromEnum(OpCode.OP_LOOP));
     const offset = currentChunk().count() - loop_start + 2;
     if (offset > std.math.maxInt(u16)) {
         errorAt(parser.current, "Loop body too large");
     }
-    try emitOpcode(@intCast((offset >> 8) & 0xff), parser);
-    try emitOpcode(@intCast(offset & 0xff), parser);
+    try emitOpcode(parser, @intCast((offset >> 8) & 0xff));
+    try emitOpcode(parser, @intCast(offset & 0xff));
 }
 
 fn patchJump(parser: *Parser, offset: usize) void {
