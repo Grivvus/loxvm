@@ -13,6 +13,8 @@ const Value = value_mod.Value;
 const Object = object.Object;
 const ObjType = object.ObjType;
 const ObjFunction = object.ObjFunction;
+const ObjClosure = object.ObjClosure;
+const ObjUpvalue = object.ObjUpvalue;
 const build_mode = @import("builtin").mode;
 
 const FRAMES_MAX = 64;
@@ -44,7 +46,7 @@ pub const BinOp = enum {
 };
 
 pub const CallFrame = struct {
-    function: *ObjFunction,
+    closure: *ObjClosure,
     ip: [*]u8,
     slots: []Value,
     slots_start_index: usize,
@@ -93,8 +95,8 @@ pub const VM = struct {
         if (callee.isObject()) {
             const obj = callee.asObject();
             switch (obj.type_) {
-                ObjType.OBJ_FUNCTION => {
-                    return try self.call(obj.asObjFunction(), arg_count);
+                ObjType.OBJ_CLOSURE => {
+                    return try self.call(obj.asObjClosure(), arg_count);
                 },
                 ObjType.OBJ_NATIVE => {
                     const native_fn = obj.asObjNative().function;
@@ -115,9 +117,13 @@ pub const VM = struct {
         return false;
     }
 
-    fn call(self: *VM, function: *ObjFunction, arg_count: u8) !bool {
-        if (arg_count != function.arity) {
-            _ = self.throw(try std.fmt.allocPrint(self.arena_alloc, "Expected {d} arguments, but got {d}", .{ function.arity, arg_count }));
+    fn captureUpvalue(self: *VM, local: *Value) !*ObjUpvalue {
+        return ObjUpvalue.init(self.obj_alloc, local);
+    }
+
+    fn call(self: *VM, closure: *ObjClosure, arg_count: u8) !bool {
+        if (arg_count != closure.function.arity) {
+            _ = self.throw(try std.fmt.allocPrint(self.arena_alloc, "Expected {d} arguments, but got {d}", .{ closure.function.arity, arg_count }));
             return false;
         }
 
@@ -128,8 +134,8 @@ pub const VM = struct {
         const frame = &self.frames[self.frame_count];
         self.frame_count += 1;
         frame.* = .{
-            .function = function,
-            .ip = function.chunk.code.items.ptr,
+            .closure = closure,
+            .ip = closure.function.chunk.code.items.ptr,
             .slots = &self.stack,
             .slots_start_index = self.stack_top_index - arg_count - 1,
         };
@@ -157,8 +163,11 @@ pub const VM = struct {
 
     pub fn interpret(vm: *VM, source: []const u8) !InterpreterResult {
         const function = try compiler.compile(source, vm.arena_alloc, vm.gpa.allocator()); // catch return InterpreterResult.INTERPRET_COMPILE_ERROR;
-        vm.push(Value.initObject(try Object.initObjFunction(vm.gpa.allocator(), null)));
-        _ = try vm.call(function, 0);
+        vm.push(Value.initObject(Object.fromFunction(function)));
+        const closure = try ObjClosure.init(vm.obj_alloc, function);
+        _ = vm.pop();
+        vm.push(Value.initObject(Object.fromClosure(closure)));
+        _ = try vm.call(closure, 0);
 
         return vm.run() catch InterpreterResult.INTERPRET_RUNTIME_ERROR;
     }
@@ -174,7 +183,7 @@ pub const VM = struct {
                     std.debug.print(" ]", .{});
                 }
                 std.debug.print("\n", .{});
-                _ = debug.disassembleInstruction(frame.function.chunk, frame.ip - frame.function.chunk.code.items.ptr);
+                _ = debug.disassembleInstruction(frame.closure.function.chunk, frame.ip - frame.closure.function.chunk.code.items.ptr);
             }
 
             const instruction = readByte(vm);
@@ -315,12 +324,37 @@ pub const VM = struct {
                     const slot = readByte(vm);
                     frame.slots[slot + frame.slots_start_index] = vm.peek(0);
                 },
+                @intFromEnum(OpCode.OP_GET_UPVALUE) => {
+                    const slot = readByte(vm);
+                    vm.push(frame.closure.upvalues[slot].location.*);
+                },
+                @intFromEnum(OpCode.OP_SET_UPVALUE) => {
+                    const slot = readByte(vm);
+                    frame.closure.upvalues[slot].location.* = vm.peek(0);
+                },
                 @intFromEnum(OpCode.OP_CALL) => {
                     const arg_count = readByte(vm);
                     if (!(try callValue(vm, vm.peek(arg_count), arg_count))) {
                         return vm.throw("Error while calling");
                     }
                     frame = &vm.frames[vm.frame_count - 1];
+                },
+                @intFromEnum(OpCode.OP_CLOSURE) => {
+                    const function = readConstant(vm).asObject().asObjFunction();
+                    const closure = Value.initObject(try Object.initObjClosure(vm.obj_alloc, function));
+                    vm.push(closure);
+                    const obj_closure = closure.asObject().asObjClosure();
+                    for (0..function.upvalue_cnt) |i| {
+                        const is_local = readByte(vm);
+                        const index = readByte(vm);
+                        if (is_local != 0) {
+                            obj_closure.upvalues[i] = try vm.captureUpvalue(
+                                &frame.slots[frame.slots_start_index + index],
+                            );
+                        } else {
+                            obj_closure.upvalues[i] = frame.closure.upvalues[index];
+                        }
+                    }
                 },
                 else => {
                     std.debug.print("Unkown instruction {d}\n", .{instruction});
@@ -337,7 +371,7 @@ pub const VM = struct {
         while (i > 0) {
             i -= 1;
             const frame = &self.frames[i];
-            const function = frame.function;
+            const function = frame.closure.function;
             const instruction_index = frame.ip - function.chunk.code.items.ptr - 1;
             const line = function.chunk.lines.items[instruction_index];
             const function_name = if (function.name == null) "script" else function.name.?.str;
@@ -384,7 +418,7 @@ pub const VM = struct {
     }
 
     inline fn readConstant(vm: *VM) Value {
-        return vm.frames[vm.frame_count - 1].function.chunk
+        return vm.frames[vm.frame_count - 1].closure.function.chunk
             .constants.values.items[readByte(vm)];
     }
 

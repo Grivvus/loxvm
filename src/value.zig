@@ -71,7 +71,13 @@ pub const Value = struct {
                 .OBJ_FUNCTION => {
                     @panic("not implemented");
                 },
+                .OBJ_CLOSURE => {
+                    @panic("not implemented");
+                },
                 .OBJ_NATIVE => {
+                    @panic("not implemented");
+                },
+                .OBJ_UPVALUE => {
                     @panic("not implemented");
                 },
             },

@@ -5,7 +5,9 @@ const Value = @import("value.zig").Value;
 pub const ObjType = enum {
     OBJ_STRING,
     OBJ_FUNCTION,
+    OBJ_CLOSURE,
     OBJ_NATIVE,
+    OBJ_UPVALUE,
 };
 
 pub const NativeFn = *const (fn (argc: usize, args: []Value) Value);
@@ -44,6 +46,21 @@ pub const Object = struct {
         }
         self.asObjFunction().deinit();
     }
+    pub fn initObjClosure(alloc: std.mem.Allocator, function: *ObjFunction) !Object {
+        return Object{
+            .type_ = .OBJ_CLOSURE,
+            .mem = try ObjClosure.init(alloc, function),
+        };
+    }
+    pub fn fromClosure(closure: *ObjClosure) Object {
+        return Object{
+            .type_ = .OBJ_CLOSURE,
+            .mem = closure,
+        };
+    }
+    pub fn deinitObjClosure(self: *Object) void {
+        self.asObjClosure().deinit();
+    }
     pub fn initObjNative(
         alloc: std.mem.Allocator,
         function: NativeFn,
@@ -62,8 +79,14 @@ pub const Object = struct {
     pub fn isObjFunction(self: Object) bool {
         return self.type_ == .OBJ_FUNCTION;
     }
+    pub fn isObjClosure(self: Object) bool {
+        return self.type_ == .OBJ_CLOSURE;
+    }
     pub fn isObjNative(self: Object) bool {
         return self.type_ == .OBJ_NATIVE;
+    }
+    pub fn isObjUpvalue(self: Object) bool {
+        return self.type_ == .OBJ_UPVALUE;
     }
 
     pub fn asObjString(self: Object) *ObjString {
@@ -75,7 +98,13 @@ pub const Object = struct {
     pub fn asObjFunction(self: Object) *ObjFunction {
         return @ptrCast(@alignCast(self.mem));
     }
+    pub fn asObjClosure(self: Object) *ObjClosure {
+        return @ptrCast(@alignCast(self.mem));
+    }
     pub fn asObjNative(self: Object) *ObjNative {
+        return @ptrCast(@alignCast(self.mem));
+    }
+    pub fn asObjUpvalue(self: Object) *ObjUpvalue {
         return @ptrCast(@alignCast(self.mem));
     }
 
@@ -83,7 +112,9 @@ pub const Object = struct {
         switch (self.type_) {
             .OBJ_STRING => std.debug.print("{s}", .{self.asObjString().str}),
             .OBJ_FUNCTION => self.asObjFunction().print(),
+            .OBJ_CLOSURE => self.asObjClosure().function.print(),
             .OBJ_NATIVE => std.debug.print("<native fn>", .{}),
+            .OBJ_UPVALUE => std.debug.print("upvalue", .{}),
         }
     }
 };
@@ -107,6 +138,7 @@ pub const ObjString = struct {
 
 pub const ObjFunction = struct {
     arity: u32,
+    upvalue_cnt: usize,
     chunk: Chunk,
     name: ?*ObjString,
     alloc: std.mem.Allocator,
@@ -116,6 +148,7 @@ pub const ObjFunction = struct {
         function.chunk = chunk;
         function.alloc = alloc;
         function.arity = 0;
+        function.upvalue_cnt = 0;
         function.name = name;
         return function;
     }
@@ -148,5 +181,43 @@ pub const ObjNative = struct {
 
     fn deinit(self: *ObjNative) void {
         self.alloc.destroy(self);
+    }
+};
+
+pub const ObjClosure = struct {
+    function: *ObjFunction,
+    upvalues: []*ObjUpvalue,
+    upvalue_cnt: usize,
+    allocator: std.mem.Allocator,
+    pub fn init(alloc: std.mem.Allocator, function: *ObjFunction) !*ObjClosure {
+        const closure = try alloc.create(ObjClosure);
+        const upvalues = try alloc.alloc(*ObjUpvalue, function.upvalue_cnt);
+        closure.* = .{
+            .function = function,
+            .upvalues = upvalues,
+            .upvalue_cnt = function.upvalue_cnt,
+            .allocator = alloc,
+        };
+        return closure;
+    }
+    pub fn deinit(self: *ObjClosure) void {
+        self.allocator.free(self.upvalues);
+        self.allocator.destroy(self);
+    }
+};
+
+pub const ObjUpvalue = struct {
+    location: *Value,
+    allocator: std.mem.Allocator,
+    pub fn init(alloc: std.mem.Allocator, location: *Value) !*ObjUpvalue {
+        const upvalue = try alloc.create(ObjUpvalue);
+        upvalue.* = .{
+            .location = location,
+            .allocator = alloc,
+        };
+        return upvalue;
+    }
+    pub fn deinit(self: *ObjUpvalue) void {
+        self.allocator.destroy(self);
     }
 };

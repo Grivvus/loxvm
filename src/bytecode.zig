@@ -11,6 +11,8 @@ pub const OpCode = enum(u8) {
     OP_POP,
     OP_GET_GLOBAL,
     OP_SET_GLOBAL,
+    OP_SET_UPVALUE,
+    OP_GET_UPVALUE,
     OP_GET_LOCAL,
     OP_SET_LOCAL,
     OP_DEFINE_GLOBAL,
@@ -33,6 +35,7 @@ pub const OpCode = enum(u8) {
     OP_LESS,
     OP_LOOP,
     OP_CALL,
+    OP_CLOSURE,
 };
 
 pub const Chunk = struct {

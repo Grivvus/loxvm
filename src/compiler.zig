@@ -63,6 +63,12 @@ const Parser = struct {
 const Local = struct {
     name: Token,
     depth: i32,
+    is_captured: bool,
+};
+
+const Upvalue = struct {
+    index: u8,
+    is_local: bool,
 };
 
 pub const FunctionType = enum {
@@ -80,22 +86,31 @@ const Compiler = struct {
     function: *ObjFunction,
     function_type: FunctionType,
     locals: [256]Local,
+    upvalues: [256]Upvalue,
     local_cnt: usize,
+    upvalue_cnt: usize,
     scope_depth: i32,
+    parser: *Parser,
     alloc: std.mem.Allocator,
     pub fn init(
         alloc: std.mem.Allocator,
         function_type: FunctionType,
         function_name: ?*ObjString,
+        parser: *Parser,
     ) !*Compiler {
         var compiler = try alloc.create(Compiler);
         compiler.enclosing = current_compiler;
         compiler.locals = undefined;
+        compiler.upvalues = undefined;
         compiler.local_cnt = 0;
+        compiler.upvalue_cnt = 0;
         compiler.scope_depth = 0;
         compiler.function = try ObjFunction.init(alloc, function_name);
         compiler.function_type = function_type;
+        compiler.parser = parser;
         compiler.alloc = alloc;
+
+        current_compiler = compiler;
 
         var local = &compiler.locals[compiler.local_cnt];
         local.depth = 0;
@@ -119,7 +134,7 @@ const Compiler = struct {
             self.local_cnt -= 1;
         }
     }
-    pub fn resolve(self: *Compiler, name: Token) CompilerError!usize {
+    pub fn resolveLocal(self: *Compiler, name: Token) CompilerError!usize {
         var i = self.local_cnt;
         while (i > 0) {
             i -= 1;
@@ -133,6 +148,40 @@ const Compiler = struct {
             }
         }
         return CompilerError.CantResolve;
+    }
+
+    pub fn resolveUpvalue(self: *Compiler, name: Token) CompilerError!usize {
+        if (self.enclosing == null) {
+            return CompilerError.CantResolve;
+        }
+
+        if (resolveLocal(self.enclosing.?, name)) |local| {
+            self.enclosing.?.locals[local].is_captured = true;
+            return self.addUpvalue(@intCast(local), true);
+        } else |_| {
+            if (resolveUpvalue(self.enclosing.?, name)) |upvalue| {
+                return addUpvalue(self, @intCast(upvalue), false);
+            } else |err| {
+                return err;
+            }
+        }
+    }
+
+    pub fn addUpvalue(self: *Compiler, local_index: u8, is_local: bool) usize {
+        const upvalue_cnt = self.function.upvalue_cnt;
+        if (upvalue_cnt >= 256) {
+            errorAt(self.parser.current, "Too many closure variables in function");
+            return;
+        }
+        for (0..upvalue_cnt) |i| {
+            if (self.upvalues[i].is_local == is_local and self.upvalues[i].index == local_index) {
+                return i;
+            }
+        }
+        self.upvalues[upvalue_cnt].is_local = is_local;
+        self.upvalues[upvalue_cnt].index = local_index;
+        self.function.upvalue_cnt += 1;
+        return upvalue_cnt;
     }
 };
 
@@ -373,9 +422,9 @@ pub fn compile(
 ) !*ObjFunction {
     fillUpRules();
     const sc = try scanner.Scanner.init(source, arena);
-    const compiler = try Compiler.init(arena, .SCRIPT, null);
-    current_compiler = compiler;
     var parser = Parser.init(sc, obj_alloc);
+    const compiler = try Compiler.init(arena, .SCRIPT, null, &parser);
+    _ = compiler;
     parser.advance();
     while (!parser.match(.EOF)) {
         try declaration(&parser);
@@ -431,8 +480,8 @@ fn function(
         parser.object_allocator,
         function_type,
         function_name,
+        parser,
     );
-    current_compiler = compiler;
     current_compiler.?.beginScope();
     parser.consume(.LEFT_PAREN, "Expect '(' after function name");
     if (!parser.check(.RIGHT_PAREN)) {
@@ -458,9 +507,16 @@ fn function(
     const func = try endCompiler(parser);
     try emitOpcodes(
         parser,
-        @intFromEnum(OpCode.OP_CONSTANT),
+        @intFromEnum(OpCode.OP_CLOSURE),
         try makeConstant(Value.initObject(Object.fromFunction(func))),
     );
+
+    for (0..func.upvalue_cnt) |i| {
+        const is_local = @intFromBool(compiler.upvalues[i].is_local);
+        const index = compiler.upvalues[i].index;
+        try emitOpcode(parser, is_local);
+        try emitOpcode(parser, index);
+    }
 }
 
 fn parseVariable(parser: *Parser, msg: []const u8) !u8 {
@@ -804,17 +860,20 @@ fn variable(parser: *Parser, can_assign: bool) !void {
     var set_op: u8 = undefined;
     const name = parser.prev;
     var arg: usize = undefined;
-    if (current_compiler.?.resolve(name)) |index| {
+    if (current_compiler.?.resolveLocal(name)) |index| {
         arg = index;
         get_op = @intFromEnum(OpCode.OP_GET_LOCAL);
         set_op = @intFromEnum(OpCode.OP_SET_LOCAL);
-    } else |err| {
-        if (err != CompilerError.CantResolve) {
-            return err;
+    } else |_| {
+        if (current_compiler.?.resolveUpvalue(name)) |index| {
+            arg = index;
+            get_op = @intFromEnum(OpCode.OP_GET_UPVALUE);
+            set_op = @intFromEnum(OpCode.OP_SET_UPVALUE);
+        } else |_| {
+            arg = try identifierConstant(parser, name);
+            get_op = @intFromEnum(OpCode.OP_GET_GLOBAL);
+            set_op = @intFromEnum(OpCode.OP_SET_GLOBAL);
         }
-        arg = try identifierConstant(parser, name);
-        get_op = @intFromEnum(OpCode.OP_GET_GLOBAL);
-        set_op = @intFromEnum(OpCode.OP_SET_GLOBAL);
     }
     if (can_assign and parser.match(.EQUAL)) {
         try expression(parser);

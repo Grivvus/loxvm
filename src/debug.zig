@@ -50,6 +50,13 @@ pub fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
         @intFromEnum(OpCode.OP_JUMP_IF_FALSE) => jumpInstruction("OP_JUMP_IF_FALSE", 1, chunk, offset),
         @intFromEnum(OpCode.OP_LOOP) => jumpInstruction("OP_LOOP", -1, chunk, offset),
         @intFromEnum(OpCode.OP_CALL) => byteInstruction("OP_CALL", chunk, offset),
+        @intFromEnum(OpCode.OP_CLOSURE) => closureInstruction(
+            "OP_CLOSURE",
+            chunk,
+            offset,
+        ),
+        @intFromEnum(OpCode.OP_GET_UPVALUE) => byteInstruction("OP_GET_VALUE", chunk, offset),
+        @intFromEnum(OpCode.OP_SET_UPVALUE) => byteInstruction("OP_SET_UPVALUE", chunk, offset),
         else => {
             print("Unkown opcode {d}\n", .{instruction});
             return offset + 1;
@@ -64,7 +71,7 @@ fn simpleInstruction(name: []const u8, offset: usize) usize {
 
 fn constantInstruction(name: []const u8, chunk: Chunk, offset: usize) usize {
     const constant = chunk.code.items[offset + 1];
-    print("{s:<16} {d:>4} '", .{ name, constant });
+    print("{s:<16} {d:0>4} '", .{ name, constant });
     printValue(chunk.constants.values.items[constant]);
     print("'\n", .{});
     return offset + 2;
@@ -72,15 +79,38 @@ fn constantInstruction(name: []const u8, chunk: Chunk, offset: usize) usize {
 
 fn byteInstruction(name: []const u8, chunk: Chunk, offset: usize) usize {
     const slot = chunk.code.items[offset + 1];
-    print("{s:<16} {d:>4}\n", .{ name, slot });
+    print("{s:<16} {d:0>4}\n", .{ name, slot });
     return offset + 2;
+}
+
+fn closureInstruction(name: []const u8, chunk: Chunk, offset: usize) usize {
+    var offset_cpy = offset;
+    offset_cpy += 1;
+    const constant = chunk.code.items[offset_cpy];
+    offset_cpy += 1;
+    print("{s:<16} {d:0>4} '", .{ name, constant });
+    printValue(chunk.constants.values.items[constant]);
+    print("'\n", .{});
+    const function = chunk.constants.values.items[constant].asObject().asObjFunction();
+    for (0..function.upvalue_cnt) |_| {
+        const is_local = chunk.code.items[offset_cpy];
+        offset_cpy += 1;
+        const index = chunk.code.items[offset_cpy];
+        offset_cpy += 1;
+        print("{d:0>4}    |            {s} {d}\n", .{
+            offset_cpy - 2,
+            if (is_local == 1) "local" else "upvalue",
+            index,
+        });
+    }
+    return offset_cpy;
 }
 
 fn jumpInstruction(name: []const u8, sign: i32, chunk: Chunk, offset: usize) usize {
     const offset_int: i32 = @intCast(offset);
     const next_ip: u16 = @intCast(chunk.code.items[offset + 1]);
     const jump = (next_ip << 8) | chunk.code.items[offset + 2];
-    print("{s:<16} {d:>4} -> {d}\n", .{ name, offset, offset_int + 3 + sign * jump });
+    print("{s:<16} {d:0>4} -> {d}\n", .{ name, offset, offset_int + 3 + sign * jump });
     return offset + 3;
 }
 
