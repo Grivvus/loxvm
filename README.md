@@ -16,10 +16,8 @@ zig build && zig-out/bin/loxvm filename.lox
 - [x] statements
 - [x] control flow (branches, loops)
 - [x] functions
-- [] garbage collection
-- [] classes, methods
-- [] inheritance
 
 
 ## work in progress
+
 
