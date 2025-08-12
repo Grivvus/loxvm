@@ -208,16 +208,23 @@ pub const ObjClosure = struct {
 
 pub const ObjUpvalue = struct {
     location: *Value,
+    closed: Value,
+    next: ?*ObjUpvalue,
     allocator: std.mem.Allocator,
     pub fn init(alloc: std.mem.Allocator, location: *Value) !*ObjUpvalue {
         const upvalue = try alloc.create(ObjUpvalue);
         upvalue.* = .{
             .location = location,
+            .next = null,
+            .closed = undefined,
             .allocator = alloc,
         };
         return upvalue;
     }
     pub fn deinit(self: *ObjUpvalue) void {
+        if (self.next != null) {
+            self.next.?.deinit();
+        }
         self.allocator.destroy(self);
     }
 };

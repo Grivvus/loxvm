@@ -57,6 +57,7 @@ pub const VM = struct {
     frame_count: u32,
     stack: [STACK_MAX_SIZE]Value,
     stack_top_index: usize,
+    open_upvalues: ?*ObjUpvalue,
     globals: HashMap(Value),
 
     arena_alloc: Allocator,
@@ -70,6 +71,7 @@ pub const VM = struct {
             .frame_count = 0,
             .stack = undefined,
             .stack_top_index = 0,
+            .open_upvalues = null,
             .globals = HashMap(Value).init(allocator),
             .arena_alloc = allocator,
             .gpa = gpa,
@@ -118,12 +120,42 @@ pub const VM = struct {
     }
 
     fn captureUpvalue(self: *VM, local: *Value) !*ObjUpvalue {
-        return ObjUpvalue.init(self.obj_alloc, local);
+        var prev_upvalue: ?*ObjUpvalue = null;
+        var upvalue = self.open_upvalues;
+        while (upvalue != null and @intFromPtr(upvalue.?.location) > @intFromPtr(local)) {
+            prev_upvalue = upvalue;
+            upvalue = upvalue.?.next;
+        }
+        if (upvalue != null and local == upvalue.?.location) {
+            return upvalue.?;
+        }
+
+        const created_upvalue = try ObjUpvalue.init(self.obj_alloc, local);
+
+        if (prev_upvalue == null) {
+            self.open_upvalues = created_upvalue;
+        } else {
+            prev_upvalue.?.next = created_upvalue;
+        }
+        return created_upvalue;
+    }
+
+    fn closeUpvalue(self: *VM, last: *Value) void {
+        while (self.open_upvalues != null and @intFromPtr(self.open_upvalues.?.location) >= @intFromPtr(last)) {
+            var upvalue = self.open_upvalues;
+            upvalue.?.closed = upvalue.?.location.*;
+            upvalue.?.location = &upvalue.?.closed;
+            self.open_upvalues = upvalue.?.next;
+        }
     }
 
     fn call(self: *VM, closure: *ObjClosure, arg_count: u8) !bool {
         if (arg_count != closure.function.arity) {
-            _ = self.throw(try std.fmt.allocPrint(self.arena_alloc, "Expected {d} arguments, but got {d}", .{ closure.function.arity, arg_count }));
+            _ = self.throw(try std.fmt.allocPrint(
+                self.arena_alloc,
+                "Expected {d} arguments, but got {d}",
+                .{ closure.function.arity, arg_count },
+            ));
             return false;
         }
 
@@ -144,6 +176,7 @@ pub const VM = struct {
 
     fn resetStack(self: *VM) void {
         self.stack_top_index = 0;
+        self.open_upvalues = null;
     }
     fn push(self: *VM, val: Value) void {
         if (self.stack_top_index >= STACK_MAX_SIZE) {
@@ -204,6 +237,7 @@ pub const VM = struct {
                 },
                 @intFromEnum(OpCode.OP_RETURN) => {
                     const result = pop(vm);
+                    vm.closeUpvalue(&frame.slots[frame.slots_start_index]);
                     vm.frame_count -= 1;
                     if (vm.frame_count == 0) {
                         _ = pop(vm);
@@ -355,6 +389,10 @@ pub const VM = struct {
                             obj_closure.upvalues[i] = frame.closure.upvalues[index];
                         }
                     }
+                },
+                @intFromEnum(OpCode.OP_CLOSE_UPVALUE) => {
+                    vm.closeUpvalue(&vm.stack[vm.stack_top_index - 1]);
+                    _ = vm.pop();
                 },
                 else => {
                     std.debug.print("Unkown instruction {d}\n", .{instruction});

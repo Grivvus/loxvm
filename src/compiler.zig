@@ -115,6 +115,7 @@ const Compiler = struct {
         var local = &compiler.locals[compiler.local_cnt];
         local.depth = 0;
         local.name = Token.init(.IDENTIFIER, "", 0);
+        local.is_captured = false;
         compiler.local_cnt += 1;
 
         return compiler;
@@ -130,7 +131,11 @@ const Compiler = struct {
         self.scope_depth -= 1;
 
         while (self.local_cnt > 0 and self.locals[self.local_cnt - 1].depth > self.scope_depth) {
-            try emitOpcode(parser, @intFromEnum(OpCode.OP_POP));
+            if (current_compiler.?.locals[current_compiler.?.local_cnt - 1].is_captured) {
+                try emitOpcode(parser, @intFromEnum(OpCode.OP_CLOSE_UPVALUE));
+            } else {
+                try emitOpcode(parser, @intFromEnum(OpCode.OP_POP));
+            }
             self.local_cnt -= 1;
         }
     }
@@ -565,6 +570,7 @@ fn addLocal(parser: *Parser, name: Token) void {
     var local: *Local = &current_compiler.?.locals[current_compiler.?.local_cnt];
     local.name = name;
     local.depth = -1;
+    local.is_captured = false;
     current_compiler.?.local_cnt += 1;
 }
 
