@@ -1,6 +1,6 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
-const HashMap = std.StringHashMap;
+const HashMap = std.HashMap;
 const Allocator = std.mem.Allocator;
 const bytecode = @import("bytecode.zig");
 const value_mod = @import("value.zig");
@@ -12,6 +12,7 @@ const OpCode = bytecode.OpCode;
 const Value = value_mod.Value;
 const Object = object.Object;
 const ObjType = object.ObjType;
+const ObjString = object.ObjString;
 const ObjFunction = object.ObjFunction;
 const ObjClosure = object.ObjClosure;
 const ObjUpvalue = object.ObjUpvalue;
@@ -19,6 +20,17 @@ const build_mode = @import("builtin").mode;
 
 const FRAMES_MAX = 64;
 const STACK_MAX_SIZE = FRAMES_MAX * std.math.maxInt(u8);
+
+const HashMapContext = struct {
+    pub fn hash(self: @This(), s: *ObjString) u64 {
+        _ = self;
+        return s.hash();
+    }
+    pub fn eql(self: @This(), a: *ObjString, b: *ObjString) bool {
+        _ = self;
+        return std.mem.eql(u8, a.str, b.str);
+    }
+};
 
 fn clockNative(argc: usize, args: []Value) Value {
     _ = argc;
@@ -58,7 +70,12 @@ pub const VM = struct {
     stack: [STACK_MAX_SIZE]Value,
     stack_top_index: usize,
     open_upvalues: ?*ObjUpvalue,
-    globals: HashMap(Value),
+    globals: HashMap(
+        *ObjString,
+        Value,
+        HashMapContext,
+        80,
+    ),
 
     arena_alloc: Allocator,
     obj_alloc: Allocator,
@@ -72,7 +89,12 @@ pub const VM = struct {
             .stack = undefined,
             .stack_top_index = 0,
             .open_upvalues = null,
-            .globals = HashMap(Value).init(allocator),
+            .globals = HashMap(
+                *ObjString,
+                Value,
+                HashMapContext,
+                80,
+            ).init(allocator),
             .arena_alloc = allocator,
             .gpa = gpa,
             .obj_alloc = gpa.allocator(),
@@ -336,12 +358,12 @@ pub const VM = struct {
                 },
                 @intFromEnum(OpCode.OP_DEFINE_GLOBAL) => {
                     const name = readConstant(vm).asObject().asObjString();
-                    try vm.globals.put(name.str, peek(vm, 0));
+                    try vm.globals.put(name, peek(vm, 0));
                     _ = pop(vm);
                 },
                 @intFromEnum(OpCode.OP_GET_GLOBAL) => {
                     const name = readConstant(vm).asObject().asObjString();
-                    const value = vm.globals.get(name.str);
+                    const value = vm.globals.get(name);
                     if (value == null) {
                         return throw(vm, try std.fmt.allocPrint(vm.arena_alloc, "Undefined variable '{s}'", .{name.str}));
                     }
@@ -349,10 +371,10 @@ pub const VM = struct {
                 },
                 @intFromEnum(OpCode.OP_SET_GLOBAL) => {
                     const name = readConstant(vm).asObject().asObjString();
-                    if (!vm.globals.contains(name.str)) {
+                    if (!vm.globals.contains(name)) {
                         return throw(vm, try std.fmt.allocPrint(vm.arena_alloc, "Undefined variable '{s}'", .{name.str}));
                     }
-                    try vm.globals.put(name.str, vm.peek(0));
+                    try vm.globals.put(name, vm.peek(0));
                 },
                 @intFromEnum(OpCode.OP_GET_LOCAL) => {
                     const slot = readByte(vm);
@@ -437,7 +459,7 @@ pub const VM = struct {
             function,
         )));
         try self.globals.put(
-            self.stack[0].asObject().asObjString().str,
+            self.stack[0].asObject().asObjString(),
             self.stack[1],
         );
         _ = self.pop();

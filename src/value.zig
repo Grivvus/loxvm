@@ -68,17 +68,8 @@ pub const Value = struct {
                     const v2_objstr = v2_obj.asObjString();
                     return std.mem.eql(u8, v1_objstr.str, v2_objstr.str);
                 },
-                .OBJ_FUNCTION => {
-                    @panic("not implemented");
-                },
-                .OBJ_CLOSURE => {
-                    @panic("not implemented");
-                },
-                .OBJ_NATIVE => {
-                    @panic("not implemented");
-                },
-                .OBJ_UPVALUE => {
-                    @panic("not implemented");
+                else => {
+                    return v1.asObject() == v2.asObject();
                 },
             },
         };

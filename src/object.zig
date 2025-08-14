@@ -141,6 +141,9 @@ pub const ObjString = struct {
         allocator.free(self.str);
         allocator.destroy(self);
     }
+    pub fn hash(self: *ObjString) u64 {
+        return std.hash.Murmur2_64.hash(self.str);
+    }
 };
 
 pub const ObjFunction = struct {
