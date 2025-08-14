@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const scanner = @import("scanner.zig");
 const object = @import("object.zig");
 const debug = @import("debug.zig");
+const gc = @import("gc.zig");
 const Chunk = @import("bytecode.zig").Chunk;
 const OpCode = @import("bytecode.zig").OpCode;
 const Value = @import("value.zig").Value;
@@ -124,7 +125,7 @@ const Compiler = struct {
         return compiler;
     }
     pub fn deinit(self: *Compiler) void {
-        self.function.deinit();
+        self.function.deinit(self.alloc);
         self.alloc.destroy(self);
     }
     pub fn beginScope(self: *Compiler) void {
@@ -1003,4 +1004,12 @@ pub fn errorAt(tok: Token, msg: []const u8) noreturn {
     }
     std.debug.print(": {s}\n", .{msg});
     @panic("");
+}
+
+pub fn markCompilerRoots() void {
+    var compiler = current_compiler;
+    while (compiler != null) {
+        gc.markObject(compiler.?.function.object);
+        compiler = compiler.?.enclosing;
+    }
 }
