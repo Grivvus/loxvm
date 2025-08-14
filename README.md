@@ -16,6 +16,7 @@ zig build && zig-out/bin/loxvm filename.lox
 - [x] statements
 - [x] control flow (branches, loops)
 - [x] functions
+- [x] closures
 
 
 ## work in progress
