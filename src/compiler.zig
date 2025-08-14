@@ -10,6 +10,7 @@ const Object = object.Object;
 const ObjString = object.ObjString;
 const ObjFunction = object.ObjFunction;
 const Scanner = scanner.Scanner;
+const VM = @import("vm.zig").VM;
 const Token = scanner.Token;
 const TokenType = scanner.TokenType;
 
@@ -18,14 +19,16 @@ const Parser = struct {
     current: Token,
     hadError: bool,
     scanner: Scanner,
+    vm: *VM,
     object_allocator: std.mem.Allocator,
 
-    pub fn init(sc: Scanner, alloc: std.mem.Allocator) Parser {
+    pub fn init(sc: Scanner, vm: *VM, alloc: std.mem.Allocator) Parser {
         return Parser{
             .prev = undefined,
             .current = undefined,
             .hadError = false,
             .scanner = sc,
+            .vm = vm,
             .object_allocator = alloc,
         };
     }
@@ -105,7 +108,7 @@ const Compiler = struct {
         compiler.local_cnt = 0;
         compiler.upvalue_cnt = 0;
         compiler.scope_depth = 0;
-        compiler.function = try ObjFunction.init(alloc, function_name);
+        compiler.function = ObjFunction.init(parser.vm, alloc, function_name);
         compiler.function_type = function_type;
         compiler.parser = parser;
         compiler.alloc = alloc;
@@ -422,12 +425,13 @@ fn getRule(tt: TokenType) *ParseRule {
 var current_compiler: ?*Compiler = null;
 pub fn compile(
     source: []const u8,
+    vm: *VM,
     arena: std.mem.Allocator,
     obj_alloc: std.mem.Allocator,
 ) !*ObjFunction {
     fillUpRules();
     const sc = try scanner.Scanner.init(source, arena);
-    var parser = Parser.init(sc, obj_alloc);
+    var parser = Parser.init(sc, vm, obj_alloc);
     const compiler = try Compiler.init(arena, .SCRIPT, null, &parser);
     _ = compiler;
     parser.advance();
@@ -471,7 +475,8 @@ fn funDeclaration(parser: *Parser) !void {
     try function(
         parser,
         .FUNCTION,
-        try ObjString.init(
+        ObjString.init(
+            parser.vm,
             parser.object_allocator,
             parser.prev.lexeme,
         ),
@@ -516,7 +521,7 @@ fn function(
     try emitOpcodes(
         parser,
         @intFromEnum(OpCode.OP_CLOSURE),
-        try makeConstant(Value.initObject(try Object.fromFunction(parser.object_allocator, func))),
+        try makeConstant(Value.initObject(&func.object)),
     );
 
     for (0..func.upvalue_cnt) |i| {
@@ -537,12 +542,11 @@ fn parseVariable(parser: *Parser, msg: []const u8) !u8 {
 }
 
 fn identifierConstant(parser: *Parser, name: Token) !u8 {
-    return try makeConstant(Value.initObject(
-        try Object.initObjString(
-            parser.object_allocator,
-            name.lexeme,
-        ),
-    ));
+    return try makeConstant(Value.initObject(&ObjString.init(
+        parser.vm,
+        parser.object_allocator,
+        name.lexeme,
+    ).object));
 }
 
 fn declareVarible(parser: *Parser) !void {
@@ -855,12 +859,11 @@ fn literal(parser: *Parser, can_assign: bool) !void {
 
 fn string(parser: *Parser, can_assign: bool) !void {
     _ = can_assign;
-    const value = Value.initObject(
-        try object.Object.initObjString(
-            parser.object_allocator,
-            parser.prev.lexeme,
-        ),
-    );
+    const value = Value.initObject(&ObjString.init(
+        parser.vm,
+        parser.object_allocator,
+        parser.prev.lexeme,
+    ).object);
     try emitConstant(parser, value);
 }
 

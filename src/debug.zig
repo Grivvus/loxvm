@@ -6,6 +6,8 @@ const Chunk = bytecode.Chunk;
 const OpCode = bytecode.OpCode;
 const value_mod = @import("value.zig");
 const Value = value_mod.Value;
+const object = @import("object.zig");
+const ObjFunction = object.ObjFunction;
 
 pub fn disassembleChunk(chunk: Chunk, name: []const u8) void {
     print("== {s} ==\n", .{name});
@@ -92,7 +94,7 @@ fn closureInstruction(name: []const u8, chunk: Chunk, offset: usize) usize {
     print("{s:<16} {d:0>4} '", .{ name, constant });
     printValue(chunk.constants.values.items[constant]);
     print("'\n", .{});
-    const function = chunk.constants.values.items[constant].asObject().asObjFunction();
+    const function = chunk.constants.values.items[constant].asObject().as(ObjFunction);
     for (0..function.upvalue_cnt) |_| {
         const is_local = chunk.code.items[offset_cpy];
         offset_cpy += 1;

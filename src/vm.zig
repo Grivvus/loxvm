@@ -7,6 +7,7 @@ const value_mod = @import("value.zig");
 const object = @import("object.zig");
 const debug = @import("debug.zig");
 const compiler = @import("compiler.zig");
+const gc = @import("gc.zig");
 const Chunk = bytecode.Chunk;
 const OpCode = bytecode.OpCode;
 const Value = value_mod.Value;
@@ -14,6 +15,7 @@ const Object = object.Object;
 const ObjType = object.ObjType;
 const ObjString = object.ObjString;
 const ObjFunction = object.ObjFunction;
+const ObjNative = object.ObjNative;
 const ObjClosure = object.ObjClosure;
 const ObjUpvalue = object.ObjUpvalue;
 const build_mode = @import("builtin").mode;
@@ -21,7 +23,7 @@ const build_mode = @import("builtin").mode;
 const FRAMES_MAX = 64;
 const STACK_MAX_SIZE = FRAMES_MAX * std.math.maxInt(u8);
 
-const HashMapContext = struct {
+pub const HashMapContext = struct {
     pub fn hash(self: @This(), s: *ObjString) u64 {
         _ = self;
         return s.hash();
@@ -76,6 +78,7 @@ pub const VM = struct {
         HashMapContext,
         80,
     ),
+    objects: ?[*]Object,
 
     arena_alloc: Allocator,
     obj_alloc: Allocator,
@@ -95,6 +98,7 @@ pub const VM = struct {
                 HashMapContext,
                 80,
             ).init(allocator),
+            .objects = null,
             .arena_alloc = allocator,
             .gpa = gpa,
             .obj_alloc = gpa.allocator(),
@@ -120,10 +124,10 @@ pub const VM = struct {
             const obj = callee.asObject();
             switch (obj.type_) {
                 ObjType.OBJ_CLOSURE => {
-                    return try self.call(obj.asObjClosure(), arg_count);
+                    return try self.call(obj.as(ObjClosure), arg_count);
                 },
                 ObjType.OBJ_NATIVE => {
-                    const native_fn = obj.asObjNative().function;
+                    const native_fn = obj.as(ObjNative).function;
                     const result = native_fn(
                         arg_count,
                         self.stack[self.stack_top_index - arg_count .. self.stack_top_index],
@@ -152,7 +156,7 @@ pub const VM = struct {
             return upvalue.?;
         }
 
-        const created_upvalue = try ObjUpvalue.init(self.obj_alloc, local);
+        const created_upvalue = ObjUpvalue.init(self, self.obj_alloc, local);
 
         if (prev_upvalue == null) {
             self.open_upvalues = created_upvalue;
@@ -219,13 +223,14 @@ pub const VM = struct {
     pub fn interpret(vm: *VM, source: []const u8) !InterpreterResult {
         const function = try compiler.compile(
             source,
+            vm,
             vm.arena_alloc,
             vm.gpa.allocator(),
         ); // catch return InterpreterResult.INTERPRET_COMPILE_ERROR;
-        vm.push(Value.initObject(try Object.fromFunction(vm.obj_alloc, function)));
-        const closure = try ObjClosure.init(vm.obj_alloc, function);
+        vm.push(Value.initObject(&function.object));
+        const closure = ObjClosure.init(vm, vm.obj_alloc, function);
         _ = vm.pop();
-        vm.push(Value.initObject(try Object.fromClosure(vm.obj_alloc, closure)));
+        vm.push(Value.initObject(&closure.object));
         _ = try vm.call(closure, 0);
 
         return vm.run() catch InterpreterResult.INTERPRET_RUNTIME_ERROR;
@@ -357,12 +362,12 @@ pub const VM = struct {
                     _ = vm.pop();
                 },
                 @intFromEnum(OpCode.OP_DEFINE_GLOBAL) => {
-                    const name = readConstant(vm).asObject().asObjString();
+                    const name = readConstant(vm).asObject().as(ObjString);
                     try vm.globals.put(name, peek(vm, 0));
                     _ = pop(vm);
                 },
                 @intFromEnum(OpCode.OP_GET_GLOBAL) => {
-                    const name = readConstant(vm).asObject().asObjString();
+                    const name = readConstant(vm).asObject().as(ObjString);
                     const value = vm.globals.get(name);
                     if (value == null) {
                         return throw(vm, try std.fmt.allocPrint(vm.arena_alloc, "Undefined variable '{s}'", .{name.str}));
@@ -370,7 +375,7 @@ pub const VM = struct {
                     vm.push(value.?);
                 },
                 @intFromEnum(OpCode.OP_SET_GLOBAL) => {
-                    const name = readConstant(vm).asObject().asObjString();
+                    const name = readConstant(vm).asObject().as(ObjString);
                     if (!vm.globals.contains(name)) {
                         return throw(vm, try std.fmt.allocPrint(vm.arena_alloc, "Undefined variable '{s}'", .{name.str}));
                     }
@@ -394,16 +399,17 @@ pub const VM = struct {
                 },
                 @intFromEnum(OpCode.OP_CALL) => {
                     const arg_count = readByte(vm);
-                    if (!(try callValue(vm, vm.peek(arg_count), arg_count))) {
+                    const callee = vm.peek(arg_count);
+                    if (!(try callValue(vm, callee, arg_count))) {
                         return vm.throw("Error while calling");
                     }
                     frame = &vm.frames[vm.frame_count - 1];
                 },
                 @intFromEnum(OpCode.OP_CLOSURE) => {
-                    const function = readConstant(vm).asObject().asObjFunction();
-                    const closure = Value.initObject(try Object.initObjClosure(vm.obj_alloc, function));
+                    const function = readConstant(vm).asObject().as(ObjFunction);
+                    const closure = Value.initObject(&ObjClosure.init(vm, vm.obj_alloc, function).object);
                     vm.push(closure);
-                    const obj_closure = closure.asObject().asObjClosure();
+                    const obj_closure = closure.asObject().as(ObjClosure);
                     for (0..function.upvalue_cnt) |i| {
                         const is_local = readByte(vm);
                         const index = readByte(vm);
@@ -450,16 +456,18 @@ pub const VM = struct {
         name: []const u8,
         function: object.NativeFn,
     ) !void {
-        self.push(Value.initObject(try Object.initObjString(
+        self.push(Value.initObject(&ObjString.init(
+            self,
             self.obj_alloc,
             name,
-        )));
-        self.push(Value.initObject(try Object.initObjNative(
+        ).object));
+        self.push(Value.initObject(&ObjNative.init(
+            self,
             self.obj_alloc,
             function,
-        )));
+        ).object));
         try self.globals.put(
-            self.stack[0].asObject().asObjString(),
+            self.stack[0].asObject().as(ObjString),
             self.stack[1],
         );
         _ = self.pop();
@@ -503,17 +511,18 @@ pub const VM = struct {
         return InterpreterResult.INTERPRET_OK;
     }
     fn concat(vm: *VM) !void {
-        const str2 = vm.pop().asObject().asObjString();
-        const str1 = vm.pop().asObject().asObjString();
+        const str2 = vm.pop().asObject().as(ObjString);
+        const str1 = vm.pop().asObject().as(ObjString);
         var alloc_str = try vm.gpa.allocator()
             .alloc(u8, str1.str.len + str2.str.len);
         defer vm.obj_alloc.free(alloc_str);
         @memcpy(alloc_str[0..str1.str.len], str1.str);
         @memcpy(alloc_str[str1.str.len..], str2.str);
-        vm.push(Value.initObject(try Object.initObjString(
+        vm.push(Value.initObject(&ObjString.init(
+            vm,
             vm.gpa.allocator(),
             alloc_str[0..],
-        )));
+        ).object));
     }
     fn isFalsey(val: Value) bool {
         return val.isNil() or (val.isBoolean() and !val.asBoolean());

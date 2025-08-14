@@ -2,6 +2,7 @@ const std = @import("std");
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const object = @import("object.zig");
+const ObjString = object.ObjString;
 
 const ValueType = enum {
     BOOL,
@@ -64,8 +65,8 @@ pub const Value = struct {
                 .OBJ_STRING => {
                     const v1_obj = v1.asObject();
                     const v2_obj = v2.asObject();
-                    const v1_objstr = v1_obj.asObjString();
-                    const v2_objstr = v2_obj.asObjString();
+                    const v1_objstr = v1_obj.as(ObjString);
+                    const v2_objstr = v2_obj.as(ObjString);
                     return std.mem.eql(u8, v1_objstr.str, v2_objstr.str);
                 },
                 else => {
