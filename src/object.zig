@@ -15,19 +15,23 @@ pub const NativeFn = *const (fn (argc: usize, args: []Value) Value);
 pub const Object = struct {
     type_: ObjType,
     mem: *anyopaque,
+    pub fn deinit(self: *Object) void {
+        switch (self.type_) {
+            .OBJ_STRING => self.asObjString().deinit(),
+            .OBJ_FUNCTION => self.asObjFunction().deinit(),
+            .OBJ_CLOSURE => self.asObjClosure().deinit(),
+            .OBJ_NATIVE => self.asObjNative().deinit(),
+            .OBJ_UPVALUE => self.asObjUpvalue().deinit(),
+        }
+    }
+
     pub fn initObjString(src: []const u8, alloc: std.mem.Allocator) !Object {
         return Object{
             .type_ = .OBJ_STRING,
             .mem = try ObjString.init(src, alloc),
         };
     }
-    pub fn deinitObjString(self: Object, alloc: std.mem.Allocator) void {
-        if (self.type_ != .OBJ_STRING) {
-            @panic("trying to deallocate wrong object");
-        }
-        const objstring_ptr: *ObjString = self.asObjString();
-        objstring_ptr.deinit(alloc);
-    }
+
     pub fn initObjFunction(alloc: std.mem.Allocator, name: ?*ObjString) !Object {
         return Object{
             .type_ = .OBJ_FUNCTION,
@@ -40,12 +44,7 @@ pub const Object = struct {
             .mem = function,
         };
     }
-    pub fn deinitObjFunction(self: *Object) void {
-        if (!self.isObjFunction()) {
-            @panic("This object is not a ObjFunction");
-        }
-        self.asObjFunction().deinit();
-    }
+
     pub fn initObjClosure(alloc: std.mem.Allocator, function: *ObjFunction) !Object {
         return Object{
             .type_ = .OBJ_CLOSURE,
@@ -58,9 +57,7 @@ pub const Object = struct {
             .mem = closure,
         };
     }
-    pub fn deinitObjClosure(self: *Object) void {
-        self.asObjClosure().deinit();
-    }
+
     pub fn initObjNative(
         alloc: std.mem.Allocator,
         function: NativeFn,
@@ -70,9 +67,7 @@ pub const Object = struct {
             .mem = try ObjNative.init(alloc, function),
         };
     }
-    pub fn deinitObjNative(self: *Object) void {
-        self.asObjFunction().deinit();
-    }
+
     pub fn isObjString(self: Object) bool {
         return self.type_ == .OBJ_STRING;
     }
