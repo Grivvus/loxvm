@@ -195,11 +195,15 @@ pub const VM = struct {
     }
 
     pub fn interpret(vm: *VM, source: []const u8) !InterpreterResult {
-        const function = try compiler.compile(source, vm.arena_alloc, vm.gpa.allocator()); // catch return InterpreterResult.INTERPRET_COMPILE_ERROR;
-        vm.push(Value.initObject(Object.fromFunction(function)));
+        const function = try compiler.compile(
+            source,
+            vm.arena_alloc,
+            vm.gpa.allocator(),
+        ); // catch return InterpreterResult.INTERPRET_COMPILE_ERROR;
+        vm.push(Value.initObject(try Object.fromFunction(vm.obj_alloc, function)));
         const closure = try ObjClosure.init(vm.obj_alloc, function);
         _ = vm.pop();
-        vm.push(Value.initObject(Object.fromClosure(closure)));
+        vm.push(Value.initObject(try Object.fromClosure(vm.obj_alloc, closure)));
         _ = try vm.call(closure, 0);
 
         return vm.run() catch InterpreterResult.INTERPRET_RUNTIME_ERROR;
@@ -425,8 +429,8 @@ pub const VM = struct {
         function: object.NativeFn,
     ) !void {
         self.push(Value.initObject(try Object.initObjString(
-            name,
             self.obj_alloc,
+            name,
         )));
         self.push(Value.initObject(try Object.initObjNative(
             self.obj_alloc,
@@ -485,8 +489,8 @@ pub const VM = struct {
         @memcpy(alloc_str[0..str1.str.len], str1.str);
         @memcpy(alloc_str[str1.str.len..], str2.str);
         vm.push(Value.initObject(try Object.initObjString(
-            alloc_str[0..],
             vm.gpa.allocator(),
+            alloc_str[0..],
         )));
     }
     fn isFalsey(val: Value) bool {

@@ -471,7 +471,10 @@ fn funDeclaration(parser: *Parser) !void {
     try function(
         parser,
         .FUNCTION,
-        try ObjString.init(parser.prev.lexeme, parser.object_allocator),
+        try ObjString.init(
+            parser.object_allocator,
+            parser.prev.lexeme,
+        ),
     );
     try defineVariable(parser, global);
 }
@@ -513,7 +516,7 @@ fn function(
     try emitOpcodes(
         parser,
         @intFromEnum(OpCode.OP_CLOSURE),
-        try makeConstant(Value.initObject(Object.fromFunction(func))),
+        try makeConstant(Value.initObject(try Object.fromFunction(parser.object_allocator, func))),
     );
 
     for (0..func.upvalue_cnt) |i| {
@@ -536,8 +539,8 @@ fn parseVariable(parser: *Parser, msg: []const u8) !u8 {
 fn identifierConstant(parser: *Parser, name: Token) !u8 {
     return try makeConstant(Value.initObject(
         try Object.initObjString(
-            name.lexeme,
             parser.object_allocator,
+            name.lexeme,
         ),
     ));
 }
@@ -854,8 +857,8 @@ fn string(parser: *Parser, can_assign: bool) !void {
     _ = can_assign;
     const value = Value.initObject(
         try object.Object.initObjString(
-            parser.prev.lexeme,
             parser.object_allocator,
+            parser.prev.lexeme,
         ),
     );
     try emitConstant(parser, value);

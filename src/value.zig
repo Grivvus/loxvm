@@ -13,7 +13,7 @@ const ValueType = enum {
 const ValueUnion = union {
     boolean: bool,
     number: f64,
-    obj: object.Object,
+    obj: *object.Object,
 };
 
 pub const Value = struct {
@@ -28,7 +28,7 @@ pub const Value = struct {
     pub fn initNil() Value {
         return Value{ .vt = .NIL, .val = .{ .boolean = false } };
     }
-    pub fn initObject(val: object.Object) Value {
+    pub fn initObject(val: *object.Object) Value {
         return Value{ .vt = .OBJECT, .val = .{ .obj = val } };
     }
     pub fn asBoolean(self: Value) bool {
@@ -37,7 +37,7 @@ pub const Value = struct {
     pub fn asNumber(self: Value) f64 {
         return self.val.number;
     }
-    pub fn asObject(self: Value) object.Object {
+    pub fn asObject(self: Value) *object.Object {
         return self.val.obj;
     }
     pub fn isBoolean(self: Value) bool {

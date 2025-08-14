@@ -14,58 +14,72 @@ pub const NativeFn = *const (fn (argc: usize, args: []Value) Value);
 
 pub const Object = struct {
     type_: ObjType,
+    is_marked: bool = false,
     mem: *anyopaque,
-    pub fn deinit(self: *Object) void {
+    pub fn deinit(self: *Object, allocator: std.mem.Allocator) void {
         switch (self.type_) {
-            .OBJ_STRING => self.asObjString().deinit(),
-            .OBJ_FUNCTION => self.asObjFunction().deinit(),
-            .OBJ_CLOSURE => self.asObjClosure().deinit(),
-            .OBJ_NATIVE => self.asObjNative().deinit(),
-            .OBJ_UPVALUE => self.asObjUpvalue().deinit(),
+            .OBJ_STRING => self.asObjString().deinit(allocator),
+            .OBJ_FUNCTION => self.asObjFunction().deinit(allocator),
+            .OBJ_CLOSURE => self.asObjClosure().deinit(allocator),
+            .OBJ_NATIVE => self.asObjNative().deinit(allocator),
+            .OBJ_UPVALUE => self.asObjUpvalue().deinit(allocator),
         }
+        allocator.destroy(self);
     }
 
-    pub fn initObjString(src: []const u8, alloc: std.mem.Allocator) !Object {
-        return Object{
+    pub fn initObjString(allocator: std.mem.Allocator, src: []const u8) !*Object {
+        const obj = try allocator.create(Object);
+        obj.* = .{
             .type_ = .OBJ_STRING,
-            .mem = try ObjString.init(src, alloc),
+            .mem = try ObjString.init(allocator, src),
         };
+        return obj;
     }
 
-    pub fn initObjFunction(alloc: std.mem.Allocator, name: ?*ObjString) !Object {
-        return Object{
+    pub fn initObjFunction(allocator: std.mem.Allocator, name: ?*ObjString) !*Object {
+        const obj = try allocator.create(Object);
+        obj.* = .{
             .type_ = .OBJ_FUNCTION,
-            .mem = try ObjFunction.init(alloc, name),
+            .mem = try ObjFunction.init(allocator, name),
         };
+        return obj;
     }
-    pub fn fromFunction(function: *ObjFunction) Object {
-        return Object{
+    pub fn fromFunction(allocator: std.mem.Allocator, function: *ObjFunction) !*Object {
+        const obj = try allocator.create(Object);
+        obj.* = .{
             .type_ = .OBJ_FUNCTION,
             .mem = function,
         };
+        return obj;
     }
 
-    pub fn initObjClosure(alloc: std.mem.Allocator, function: *ObjFunction) !Object {
-        return Object{
+    pub fn initObjClosure(allocator: std.mem.Allocator, function: *ObjFunction) !*Object {
+        const obj = try allocator.create(Object);
+        obj.* = .{
             .type_ = .OBJ_CLOSURE,
-            .mem = try ObjClosure.init(alloc, function),
+            .mem = try ObjClosure.init(allocator, function),
         };
+        return obj;
     }
-    pub fn fromClosure(closure: *ObjClosure) Object {
-        return Object{
+    pub fn fromClosure(allocator: std.mem.Allocator, closure: *ObjClosure) !*Object {
+        const obj = try allocator.create(Object);
+        obj.* = .{
             .type_ = .OBJ_CLOSURE,
             .mem = closure,
         };
+        return obj;
     }
 
     pub fn initObjNative(
-        alloc: std.mem.Allocator,
+        allocator: std.mem.Allocator,
         function: NativeFn,
-    ) !Object {
-        return Object{
+    ) !*Object {
+        const obj = try allocator.create(Object);
+        obj.* = .{
             .type_ = .OBJ_NATIVE,
-            .mem = try ObjNative.init(alloc, function),
+            .mem = try ObjNative.init(allocator, function),
         };
+        return obj;
     }
 
     pub fn isObjString(self: Object) bool {
@@ -116,18 +130,16 @@ pub const Object = struct {
 
 pub const ObjString = struct {
     str: []u8,
-    alloc: std.mem.Allocator,
-    pub fn init(source: []const u8, alloc: std.mem.Allocator) !*ObjString {
-        const obj = try alloc.create(ObjString);
-        const alloc_str = try alloc.alloc(u8, source.len);
+    pub fn init(allocator: std.mem.Allocator, source: []const u8) !*ObjString {
+        const obj = try allocator.create(ObjString);
+        const alloc_str = try allocator.alloc(u8, source.len);
         std.mem.copyBackwards(u8, alloc_str, source);
         obj.*.str = alloc_str;
-        obj.*.alloc = alloc;
         return obj;
     }
-    pub fn deinit(self: *ObjString) void {
-        self.alloc.free(self.str);
-        self.destroy(self);
+    pub fn deinit(self: *ObjString, allocator: std.mem.Allocator) void {
+        allocator.free(self.str);
+        allocator.destroy(self);
     }
 };
 
@@ -136,23 +148,21 @@ pub const ObjFunction = struct {
     upvalue_cnt: usize,
     chunk: Chunk,
     name: ?*ObjString,
-    alloc: std.mem.Allocator,
-    pub fn init(alloc: std.mem.Allocator, name: ?*ObjString) !*ObjFunction {
-        var function = try alloc.create(ObjFunction);
-        const chunk = Chunk.init(alloc);
+    pub fn init(allocator: std.mem.Allocator, name: ?*ObjString) !*ObjFunction {
+        var function = try allocator.create(ObjFunction);
+        const chunk = Chunk.init(allocator);
         function.chunk = chunk;
-        function.alloc = alloc;
         function.arity = 0;
         function.upvalue_cnt = 0;
         function.name = name;
         return function;
     }
-    pub fn deinit(self: *ObjFunction) void {
-        self.chunk.deinit();
+    pub fn deinit(self: *ObjFunction, allocator: std.mem.Allocator) void {
+        self.chunk.deinit(allocator);
         if (self.name != null) {
-            self.name.deinit();
+            self.name.deinit(allocator);
         }
-        self.alloc.destroy(self);
+        allocator.destroy(self);
     }
 
     pub fn print(self: *ObjFunction) void {
@@ -166,16 +176,14 @@ pub const ObjFunction = struct {
 
 pub const ObjNative = struct {
     function: NativeFn,
-    alloc: std.mem.Allocator,
-    fn init(alloc: std.mem.Allocator, function: NativeFn) !*ObjNative {
-        const obj_native = try alloc.create(ObjNative);
+    fn init(allocator: std.mem.Allocator, function: NativeFn) !*ObjNative {
+        const obj_native = try allocator.create(ObjNative);
         obj_native.*.function = function;
-        obj_native.*.alloc = alloc;
         return obj_native;
     }
 
-    fn deinit(self: *ObjNative) void {
-        self.alloc.destroy(self);
+    fn deinit(self: *ObjNative, allocator: std.mem.Allocator) void {
+        allocator.destroy(self);
     }
 };
 
@@ -183,21 +191,19 @@ pub const ObjClosure = struct {
     function: *ObjFunction,
     upvalues: []*ObjUpvalue,
     upvalue_cnt: usize,
-    allocator: std.mem.Allocator,
-    pub fn init(alloc: std.mem.Allocator, function: *ObjFunction) !*ObjClosure {
-        const closure = try alloc.create(ObjClosure);
-        const upvalues = try alloc.alloc(*ObjUpvalue, function.upvalue_cnt);
+    pub fn init(allocator: std.mem.Allocator, function: *ObjFunction) !*ObjClosure {
+        const closure = try allocator.create(ObjClosure);
+        const upvalues = try allocator.alloc(*ObjUpvalue, function.upvalue_cnt);
         closure.* = .{
             .function = function,
             .upvalues = upvalues,
             .upvalue_cnt = function.upvalue_cnt,
-            .allocator = alloc,
         };
         return closure;
     }
-    pub fn deinit(self: *ObjClosure) void {
-        self.allocator.free(self.upvalues);
-        self.allocator.destroy(self);
+    pub fn deinit(self: *ObjClosure, allocator: std.mem.Allocator) void {
+        allocator.free(self.upvalues);
+        allocator.destroy(self);
     }
 };
 
@@ -205,21 +211,19 @@ pub const ObjUpvalue = struct {
     location: *Value,
     closed: Value,
     next: ?*ObjUpvalue,
-    allocator: std.mem.Allocator,
-    pub fn init(alloc: std.mem.Allocator, location: *Value) !*ObjUpvalue {
-        const upvalue = try alloc.create(ObjUpvalue);
+    pub fn init(allocator: std.mem.Allocator, location: *Value) !*ObjUpvalue {
+        const upvalue = try allocator.create(ObjUpvalue);
         upvalue.* = .{
             .location = location,
             .next = null,
             .closed = undefined,
-            .allocator = alloc,
         };
         return upvalue;
     }
-    pub fn deinit(self: *ObjUpvalue) void {
+    pub fn deinit(self: *ObjUpvalue, allocator: std.mem.Allocator) void {
         if (self.next != null) {
-            self.next.?.deinit();
+            self.next.?.deinit(allocator);
         }
-        self.allocator.destroy(self);
+        allocator.destroy(self);
     }
 };
