@@ -8,6 +8,7 @@ const object = @import("object.zig");
 const debug = @import("debug.zig");
 const compiler = @import("compiler.zig");
 const gc = @import("gc.zig");
+const collectGarbage = gc.collectGarbage;
 const Chunk = bytecode.Chunk;
 const OpCode = bytecode.OpCode;
 const Value = value_mod.Value;
@@ -22,6 +23,7 @@ const build_mode = @import("builtin").mode;
 
 const FRAMES_MAX = 64;
 const STACK_MAX_SIZE = FRAMES_MAX * std.math.maxInt(u8);
+const DEBUG_STRESS_GC = gc.DEBUG_STRESS_GC;
 
 pub const HashMapContext = struct {
     pub fn hash(self: @This(), s: *ObjString) u64 {
@@ -68,9 +70,9 @@ pub const CallFrame = struct {
 
 pub const VM = struct {
     frames: []CallFrame,
-    frame_count: u32,
+    frame_count: u32 = 0,
     stack: [STACK_MAX_SIZE]Value,
-    stack_top_index: usize,
+    stack_top_index: usize = 0,
     open_upvalues: ?*ObjUpvalue,
     globals: HashMap(
         *ObjString,
@@ -78,19 +80,21 @@ pub const VM = struct {
         HashMapContext,
         80,
     ),
-    objects: ?[*]Object,
+    objects: ?*Object,
+
+    bytes_allocated: usize = 0,
+    next_gc: usize = 1024 * 1024,
+    gray_stack: ArrayList(*Object),
 
     arena_alloc: Allocator,
     obj_alloc: Allocator,
     gpa: std.heap.GeneralPurposeAllocator(.{}),
 
     pub fn init(allocator: Allocator) !VM {
-        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
         var vm = VM{
             .frames = try allocator.alloc(CallFrame, FRAMES_MAX),
-            .frame_count = 0,
             .stack = undefined,
-            .stack_top_index = 0,
             .open_upvalues = null,
             .globals = HashMap(
                 *ObjString,
@@ -99,6 +103,7 @@ pub const VM = struct {
                 80,
             ).init(allocator),
             .objects = null,
+            .gray_stack = ArrayList(*Object).init(allocator),
             .arena_alloc = allocator,
             .gpa = gpa,
             .obj_alloc = gpa.allocator(),
@@ -108,8 +113,18 @@ pub const VM = struct {
         return vm;
     }
     pub fn deinit(self: *VM) void {
-        self.arena_alloc.free(self.frames);
+        self.stack_top_index = 0;
+        self.frame_count = 0;
+        self.open_upvalues = null;
+
+        while (self.objects) |obj| {
+            self.objects = obj.next;
+            self.bytes_allocated -= obj.deinit();
+        }
+
+        self.globals.clearRetainingCapacity();
         self.globals.deinit();
+        self.gray_stack.deinit();
         const leaked = self.gpa.deinit();
         if (leaked == .leak) {
             std.log.err("Memory leak detected in object allocator", .{});
@@ -204,14 +219,14 @@ pub const VM = struct {
         self.stack_top_index = 0;
         self.open_upvalues = null;
     }
-    fn push(self: *VM, val: Value) void {
+    pub fn push(self: *VM, val: Value) void {
         if (self.stack_top_index >= STACK_MAX_SIZE) {
             @panic("Stack overflow");
         }
         self.stack[self.stack_top_index] = val;
         self.stack_top_index += 1;
     }
-    fn pop(self: *VM) Value {
+    pub fn pop(self: *VM) Value {
         if (self.stack_top_index == 0) {
             @panic("Poped from empty stack");
         }
@@ -250,6 +265,12 @@ pub const VM = struct {
                 _ = debug.disassembleInstruction(frame.closure.function.chunk, frame.ip - frame.closure.function.chunk.code.items.ptr);
             }
 
+            if (DEBUG_STRESS_GC) {
+                collectGarbage(vm);
+            }
+            if (vm.bytes_allocated >= vm.next_gc) {
+                collectGarbage(vm);
+            }
             const instruction = readByte(vm);
             switch (instruction) {
                 @intFromEnum(OpCode.OP_JUMP) => {
@@ -408,8 +429,8 @@ pub const VM = struct {
                 @intFromEnum(OpCode.OP_CLOSURE) => {
                     const function = readConstant(vm).asObject().as(ObjFunction);
                     const closure = Value.initObject(&ObjClosure.init(vm, vm.obj_alloc, function).object);
-                    vm.push(closure);
                     const obj_closure = closure.asObject().as(ObjClosure);
+
                     for (0..function.upvalue_cnt) |i| {
                         const is_local = readByte(vm);
                         const index = readByte(vm);
@@ -421,6 +442,8 @@ pub const VM = struct {
                             obj_closure.upvalues[i] = frame.closure.upvalues[index];
                         }
                     }
+
+                    vm.push(closure);
                 },
                 @intFromEnum(OpCode.OP_CLOSE_UPVALUE) => {
                     vm.closeUpvalue(&vm.stack[vm.stack_top_index - 1]);
@@ -511,16 +534,17 @@ pub const VM = struct {
         return InterpreterResult.INTERPRET_OK;
     }
     fn concat(vm: *VM) !void {
-        const str2 = vm.pop().asObject().as(ObjString);
-        const str1 = vm.pop().asObject().as(ObjString);
-        var alloc_str = try vm.gpa.allocator()
-            .alloc(u8, str1.str.len + str2.str.len);
+        const str2 = vm.peek(0).asObject().as(ObjString);
+        const str1 = vm.peek(1).asObject().as(ObjString);
+        var alloc_str = try vm.obj_alloc.alloc(u8, str1.str.len + str2.str.len);
         defer vm.obj_alloc.free(alloc_str);
         @memcpy(alloc_str[0..str1.str.len], str1.str);
         @memcpy(alloc_str[str1.str.len..], str2.str);
+        _ = vm.pop();
+        _ = vm.pop();
         vm.push(Value.initObject(&ObjString.init(
             vm,
-            vm.gpa.allocator(),
+            vm.obj_alloc,
             alloc_str[0..],
         ).object));
     }

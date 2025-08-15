@@ -8,16 +8,27 @@ const compiler_mod = @import("compiler.zig");
 const VM = vm_mod.VM;
 const Context = vm_mod.HashMapContext;
 const Value = value_mod.Value;
+const ValueArray = value_mod.ValueArray;
 const Object = object_mod.Object;
 const ObjString = object_mod.ObjString;
+const ObjUpvalue = object_mod.ObjUpvalue;
+const ObjClosure = object_mod.ObjClosure;
+const ObjFunction = object_mod.ObjFunction;
 const markCompilerRoots = compiler_mod.markCompilerRoots;
 
-const DEBUG_STRESS_GC = ((build_mode == .Debug) and true);
+pub const DEBUG_STRESS_GC = ((build_mode == .Debug) and false);
+const GC_HEAP_GROW_FACTOR = if (DEBUG_STRESS_GC) 1 else 2;
 
-pub fn collectGarbage() void {
+pub fn collectGarbage(vm: *VM) void {
     if (build_mode == .Debug) {
         std.debug.print("-- gc begin\n", .{});
     }
+
+    markRoots(vm);
+    traceReference(vm);
+    sweep(vm);
+
+    vm.next_gc *= GC_HEAP_GROW_FACTOR;
 
     if (build_mode == .Debug) {
         std.debug.print("-- gc end\n", .{});
@@ -26,43 +37,113 @@ pub fn collectGarbage() void {
 
 pub fn markRoots(vm: *VM) void {
     for (0..vm.stack_top_index) |i| {
-        markValue(vm.stack[i]);
+        markValue(vm, vm.stack[i]);
     }
 
     for (0..vm.frame_count) |i| {
-        markObject(&vm.frames[i].closure.object);
+        markObject(vm, &vm.frames[i].closure.object);
     }
 
     var upvalue_iter = vm.open_upvalues;
     while (upvalue_iter != null) {
-        markObject(&upvalue_iter.?.object);
+        markObject(vm, &upvalue_iter.?.object);
         upvalue_iter = upvalue_iter.?.next;
     }
 
-    markTable(vm.globals);
+    markTable(vm);
 
     markCompilerRoots();
 }
 
-fn markValue(value: Value) void {
+fn markValue(vm: *VM, value: Value) void {
     if (value.isObject()) {
-        markObject(value.asObject());
+        markObject(vm, value.asObject());
     }
 }
 
-pub fn markObject(object: *Object) void {
+pub fn markObject(vm: *VM, object: *Object) void {
+    if (object.is_marked) {
+        return;
+    }
     if (build_mode == .Debug) {
-        std.debug.print("{d} mark ", .{@intFromPtr(object)});
+        std.debug.print("{x} mark ", .{@intFromPtr(object)});
         Value.initObject(object).printValue();
         std.debug.print("\n", .{});
     }
     object.is_marked = true;
+    vm.gray_stack.append(object) catch {
+        @panic("Allocation error");
+    };
 }
 
-fn markTable(table: std.HashMap(*ObjString, Value, Context, 80)) void {
+fn markTable(vm: *VM) void {
+    const table = vm.globals;
     var iter = table.keyIterator();
     while (iter.next()) |key| {
-        markObject(key.object);
-        markValue(table.get(key.*));
+        markObject(vm, &key.*.object);
+        markValue(vm, table.get(key.*).?);
+    }
+}
+
+fn markArray(vm: *VM, array: ValueArray) void {
+    for (0..array.values.items.len) |i| {
+        markValue(vm, array.values.items[i]);
+    }
+}
+
+fn traceReference(vm: *VM) void {
+    while (vm.gray_stack.pop()) |elem| {
+        blackenObject(vm, elem);
+    }
+}
+
+fn blackenObject(vm: *VM, object: *Object) void {
+    if (build_mode == .Debug) {
+        std.debug.print("{x} blacken ", .{@intFromPtr(object)});
+        Value.initObject(object).printValue();
+        std.debug.print("\n", .{});
+    }
+    switch (object.type_) {
+        .OBJ_UPVALUE => {
+            const upvalue: *ObjUpvalue = @fieldParentPtr("object", object);
+            markValue(vm, upvalue.closed);
+        },
+        .OBJ_FUNCTION => {
+            const function: *ObjFunction = @fieldParentPtr("object", object);
+            if (function.name != null) {
+                markObject(vm, &function.name.?.object);
+            }
+            markArray(vm, function.chunk.constants);
+        },
+        .OBJ_CLOSURE => {
+            const closure: *ObjClosure = @fieldParentPtr("object", object);
+            markObject(vm, &closure.function.object);
+            for (0..closure.upvalue_cnt) |i| {
+                markObject(vm, &closure.upvalues[i].object);
+            }
+        },
+        .OBJ_STRING, .OBJ_NATIVE => {},
+    }
+}
+
+fn sweep(vm: *VM) void {
+    var prev: ?*Object = null;
+    var curr: ?*Object = vm.objects;
+    while (curr) |obj| {
+        if (obj.is_marked) {
+            obj.is_marked = false;
+            prev = obj;
+            curr = obj.next;
+        } else {
+            const next = obj.next;
+            if (prev) |p| {
+                p.next = next;
+            } else {
+                vm.objects = next;
+            }
+            const freed = obj.deinit();
+            vm.bytes_allocated -= freed;
+            curr = next;
+        }
     }
 }

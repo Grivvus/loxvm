@@ -3,6 +3,8 @@ const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 
 const value_mod = @import("value.zig");
+const vm_mod = @import("vm.zig");
+const VM = vm_mod.VM;
 const Value = value_mod.Value;
 const ValueArray = value_mod.ValueArray;
 
@@ -59,8 +61,10 @@ pub const Chunk = struct {
         try self.lines.append(line);
     }
 
-    pub fn addConstant(self: *Chunk, value: Value) !usize {
+    pub fn addConstant(self: *Chunk, vm: *VM, value: Value) !usize {
+        vm.push(value);
         try self.constants.write(value);
+        _ = vm.pop();
         return self.constants.values.items.len - 1;
     }
 

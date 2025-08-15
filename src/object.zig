@@ -3,6 +3,8 @@ const VM = @import("vm.zig").VM;
 const Chunk = @import("bytecode.zig").Chunk;
 const Value = @import("value.zig").Value;
 
+const build_mode = @import("builtin").mode;
+
 const assert = std.debug.assert;
 
 pub const ObjType = enum {
@@ -18,16 +20,20 @@ pub const NativeFn = *const (fn (argc: usize, args: []Value) Value);
 pub const Object = struct {
     type_: ObjType,
     is_marked: bool,
-    next: ?[*]Object,
-    pub fn deinit(self: *Object, allocator: std.mem.Allocator) void {
-        switch (self.type_) {
-            .OBJ_STRING => self.as(ObjString).deinit(allocator),
-            .OBJ_FUNCTION => self.as(ObjFunction).deinit(allocator),
-            .OBJ_CLOSURE => self.as(ObjClosure).deinit(allocator),
-            .OBJ_NATIVE => self.as(ObjNative).deinit(allocator),
-            .OBJ_UPVALUE => self.as(ObjUpvalue).deinit(allocator),
+    next: ?*Object,
+    pub fn deinit(self: *Object) usize {
+        if (build_mode == .Debug) {
+            std.debug.print("{x} deleting ", .{@intFromPtr(self)});
+            Value.initObject(self).printValue();
+            std.debug.print("\n", .{});
         }
-        allocator.destroy(self);
+        return switch (self.type_) {
+            .OBJ_STRING => self.as(ObjString).deinit(),
+            .OBJ_FUNCTION => self.as(ObjFunction).deinit(),
+            .OBJ_CLOSURE => self.as(ObjClosure).deinit(),
+            .OBJ_NATIVE => self.as(ObjNative).deinit(),
+            .OBJ_UPVALUE => self.as(ObjUpvalue).deinit(),
+        };
     }
 
     pub fn isObjString(self: Object) bool {
@@ -47,7 +53,14 @@ pub const Object = struct {
     }
 
     pub fn as(self: *Object, comptime T: type) *T {
-        return @fieldParentPtr("object", self);
+        switch (self.type_) {
+            .OBJ_STRING => std.debug.assert(self.isObjString()),
+            .OBJ_FUNCTION => std.debug.assert(self.isObjFunction()),
+            .OBJ_CLOSURE => std.debug.assert(self.isObjClosure()),
+            .OBJ_NATIVE => std.debug.assert(self.isObjNative()),
+            .OBJ_UPVALUE => std.debug.assert(self.isObjUpvalue()),
+        }
+        return @alignCast(@fieldParentPtr("object", self));
     }
 
     pub fn printObject(self: *Object) void {
@@ -64,6 +77,7 @@ pub const Object = struct {
 pub const ObjString = struct {
     object: Object,
     str: []u8,
+    allocator: std.mem.Allocator,
     pub fn init(
         vm: *VM,
         allocator: std.mem.Allocator,
@@ -72,21 +86,31 @@ pub const ObjString = struct {
         var obj_str = allocator.create(ObjString) catch {
             @panic("Allocation error");
         };
-        const alloc_str = allocator.alloc(u8, source.len) catch {
+        vm.bytes_allocated += @sizeOf(ObjString);
+        vm.bytes_allocated += source.len;
+        obj_str.str = allocator.dupe(u8, source) catch {
             @panic("Allocation error");
         };
-        std.mem.copyBackwards(u8, alloc_str, source);
-        obj_str.str = alloc_str;
+        obj_str.allocator = allocator;
         obj_str.object = .{
             .type_ = .OBJ_STRING,
             .next = vm.objects,
             .is_marked = false,
         };
+        vm.objects = &obj_str.object;
         return obj_str;
     }
-    pub fn deinit(self: *ObjString, allocator: std.mem.Allocator) void {
-        allocator.free(self.str);
-        allocator.destroy(self);
+    pub fn deinit(self: *ObjString) usize {
+        const freed = self.str.len + @sizeOf(ObjString);
+        if (build_mode == .Debug) {
+            for (self.str) |elem| {
+                std.debug.print("{d} ", .{elem});
+            }
+            std.debug.print("\n", .{});
+        }
+        self.allocator.free(self.str);
+        self.allocator.destroy(self);
+        return freed;
     }
     pub fn hash(self: *ObjString) u64 {
         return std.hash.Murmur2_64.hash(self.str);
@@ -99,6 +123,7 @@ pub const ObjFunction = struct {
     upvalue_cnt: usize,
     chunk: Chunk,
     name: ?*ObjString,
+    allocator: std.mem.Allocator,
     pub fn init(
         vm: *VM,
         allocator: std.mem.Allocator,
@@ -108,6 +133,7 @@ pub const ObjFunction = struct {
             @panic("Allocation error");
         };
         const chunk = Chunk.init(allocator);
+        vm.bytes_allocated += @sizeOf(ObjFunction);
         function.chunk = chunk;
         function.arity = 0;
         function.upvalue_cnt = 0;
@@ -117,14 +143,15 @@ pub const ObjFunction = struct {
             .next = vm.objects,
             .is_marked = false,
         };
+        function.allocator = allocator;
+        vm.objects = &function.object;
         return function;
     }
-    pub fn deinit(self: *ObjFunction, allocator: std.mem.Allocator) void {
-        self.chunk.deinit(allocator);
-        if (self.name != null) {
-            self.name.deinit(allocator);
-        }
-        allocator.destroy(self);
+    pub fn deinit(self: *ObjFunction) usize {
+        const freed = @sizeOf(ObjFunction);
+        self.chunk.deinit();
+        self.allocator.destroy(self);
+        return freed;
     }
 
     pub fn print(self: *ObjFunction) void {
@@ -139,6 +166,7 @@ pub const ObjFunction = struct {
 pub const ObjNative = struct {
     object: Object,
     function: NativeFn,
+    allocator: std.mem.Allocator,
     pub fn init(
         vm: *VM,
         allocator: std.mem.Allocator,
@@ -148,17 +176,22 @@ pub const ObjNative = struct {
             @panic("Allocation error");
         };
         obj_native.function = function;
+        obj_native.allocator = allocator;
         obj_native.object = .{
             .type_ = .OBJ_NATIVE,
             .next = vm.objects,
             .is_marked = false,
         };
+        vm.objects = &obj_native.object;
+        vm.bytes_allocated += @sizeOf(ObjNative);
 
         return obj_native;
     }
 
-    pub fn deinit(self: *ObjNative, allocator: std.mem.Allocator) void {
-        allocator.destroy(self);
+    pub fn deinit(self: *ObjNative) usize {
+        const freed = @sizeOf(ObjNative);
+        self.allocator.destroy(self);
+        return freed;
     }
 };
 
@@ -167,6 +200,7 @@ pub const ObjClosure = struct {
     function: *ObjFunction,
     upvalues: []*ObjUpvalue,
     upvalue_cnt: usize,
+    allocator: std.mem.Allocator,
     pub fn init(
         vm: *VM,
         allocator: std.mem.Allocator,
@@ -178,21 +212,26 @@ pub const ObjClosure = struct {
         const upvalues = allocator.alloc(*ObjUpvalue, function.upvalue_cnt) catch {
             @panic("Allocation error");
         };
+        vm.bytes_allocated += (@sizeOf(ObjClosure) + (function.upvalue_cnt * @sizeOf(*ObjUpvalue)));
         closure.* = .{
             .function = function,
             .upvalues = upvalues,
             .upvalue_cnt = function.upvalue_cnt,
+            .allocator = allocator,
             .object = .{
                 .type_ = .OBJ_CLOSURE,
                 .next = vm.objects,
                 .is_marked = false,
             },
         };
+        vm.objects = &closure.object;
         return closure;
     }
-    pub fn deinit(self: *ObjClosure, allocator: std.mem.Allocator) void {
-        allocator.free(self.upvalues);
-        allocator.destroy(self);
+    pub fn deinit(self: *ObjClosure) usize {
+        const freed = @sizeOf(ObjClosure) + (self.upvalue_cnt * @sizeOf(*ObjUpvalue));
+        self.allocator.free(self.upvalues);
+        self.allocator.destroy(self);
+        return freed;
     }
 };
 
@@ -201,6 +240,7 @@ pub const ObjUpvalue = struct {
     location: *Value,
     closed: Value,
     next: ?*ObjUpvalue,
+    allocator: std.mem.Allocator,
     pub fn init(
         vm: *VM,
         allocator: std.mem.Allocator,
@@ -209,22 +249,24 @@ pub const ObjUpvalue = struct {
         const upvalue = allocator.create(ObjUpvalue) catch {
             @panic("Allocation error");
         };
+        vm.bytes_allocated += @sizeOf(ObjUpvalue);
         upvalue.* = .{
             .location = location,
             .next = null,
-            .closed = undefined,
+            .closed = Value.initNil(),
+            .allocator = allocator,
             .object = .{
                 .type_ = .OBJ_UPVALUE,
                 .next = vm.objects,
                 .is_marked = false,
             },
         };
+        vm.objects = &upvalue.object;
         return upvalue;
     }
-    pub fn deinit(self: *ObjUpvalue, allocator: std.mem.Allocator) void {
-        if (self.next != null) {
-            self.next.?.deinit(allocator);
-        }
-        allocator.destroy(self);
+    pub fn deinit(self: *ObjUpvalue) usize {
+        const freed = @sizeOf(ObjUpvalue);
+        self.allocator.destroy(self);
+        return freed;
     }
 };

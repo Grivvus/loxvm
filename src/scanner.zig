@@ -97,9 +97,6 @@ pub const Scanner = struct {
             .keywords = keywords,
         };
     }
-    pub fn deinit(self: *Scanner) void {
-        _ = self;
-    }
 
     pub fn scanToken(self: *Scanner) Token {
         self.skipWhitespace();

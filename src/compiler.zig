@@ -125,7 +125,6 @@ const Compiler = struct {
         return compiler;
     }
     pub fn deinit(self: *Compiler) void {
-        self.function.deinit(self.alloc);
         self.alloc.destroy(self);
     }
     pub fn beginScope(self: *Compiler) void {
@@ -433,7 +432,7 @@ pub fn compile(
     fillUpRules();
     const sc = try scanner.Scanner.init(source, arena);
     var parser = Parser.init(sc, vm, obj_alloc);
-    const compiler = try Compiler.init(arena, .SCRIPT, null, &parser);
+    const compiler = try Compiler.init(obj_alloc, .SCRIPT, null, &parser);
     _ = compiler;
     parser.advance();
     while (!parser.match(.EOF)) {
@@ -933,7 +932,9 @@ fn endCompiler(parser: *Parser) !*ObjFunction {
             );
         }
     }
+    const to_delete = current_compiler;
     current_compiler = current_compiler.?.enclosing;
+    to_delete.?.deinit();
     return ret;
 }
 
@@ -986,7 +987,7 @@ fn patchJump(parser: *Parser, offset: usize) void {
 }
 
 fn makeConstant(value: Value) !u8 {
-    const index: u8 = @intCast(try currentChunk().addConstant(value));
+    const index: u8 = @intCast(try currentChunk().addConstant(current_compiler.?.parser.vm, value));
     return index;
 }
 
@@ -1008,8 +1009,8 @@ pub fn errorAt(tok: Token, msg: []const u8) noreturn {
 
 pub fn markCompilerRoots() void {
     var compiler = current_compiler;
-    while (compiler != null) {
-        gc.markObject(compiler.?.function.object);
-        compiler = compiler.?.enclosing;
+    while (compiler) |cmp| {
+        gc.markObject(cmp.parser.vm, &cmp.function.object);
+        compiler = cmp.enclosing;
     }
 }
