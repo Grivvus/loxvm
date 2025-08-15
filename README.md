@@ -17,8 +17,10 @@ zig build && zig-out/bin/loxvm filename.lox
 - [x] control flow (branches, loops)
 - [x] functions
 - [x] closures
+- [x] garbage collection (works only in Debug and ReleaseFast modes)
 
 
 ## work in progress
+
 
 
