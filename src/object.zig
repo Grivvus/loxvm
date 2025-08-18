@@ -16,13 +16,14 @@ pub const ObjType = enum {
     OBJ_UPVALUE,
     OBJ_CLASS,
     OBJ_INSTANCE,
+    OBJ_BOUND_METHOD,
 };
 
 pub const NativeFn = *const (fn (argc: usize, args: []Value) Value);
 
 pub const Object = struct {
     type_: ObjType,
-    is_marked: bool,
+    is_marked: bool = false,
     next: ?*Object,
     pub fn deinit(self: *Object) usize {
         if (build_mode == .Debug) {
@@ -38,6 +39,7 @@ pub const Object = struct {
             .OBJ_UPVALUE => self.as(ObjUpvalue).deinit(),
             .OBJ_CLASS => self.as(ObjClass).deinit(),
             .OBJ_INSTANCE => self.as(ObjInstance).deinit(),
+            .OBJ_BOUND_METHOD => self.as(ObjBoundMethod).deinit(),
         };
     }
 
@@ -62,6 +64,9 @@ pub const Object = struct {
     pub fn isObjInstance(self: Object) bool {
         return self.type_ == .OBJ_INSTANCE;
     }
+    pub fn isObjBoundMethod(self: Object) bool {
+        return self.type_ == .OBJ_BOUND_METHOD;
+    }
 
     pub fn as(self: *Object, comptime T: type) *T {
         switch (self.type_) {
@@ -72,6 +77,7 @@ pub const Object = struct {
             .OBJ_UPVALUE => std.debug.assert(self.isObjUpvalue()),
             .OBJ_CLASS => std.debug.assert(self.isObjClass()),
             .OBJ_INSTANCE => std.debug.assert(self.isObjInstance()),
+            .OBJ_BOUND_METHOD => std.debug.assert(self.isObjBoundMethod()),
         }
         return @alignCast(@fieldParentPtr("object", self));
     }
@@ -88,6 +94,7 @@ pub const Object = struct {
                 @intFromPtr(self.as(ObjInstance)),
                 self.as(ObjInstance).class.name.str,
             }),
+            .OBJ_BOUND_METHOD => self.as(ObjBoundMethod).method.function.print(),
         }
     }
 };
@@ -113,7 +120,6 @@ pub const ObjString = struct {
         obj_str.object = .{
             .type_ = .OBJ_STRING,
             .next = vm.objects,
-            .is_marked = false,
         };
         vm.objects = &obj_str.object;
         return obj_str;
@@ -159,7 +165,6 @@ pub const ObjFunction = struct {
         function.object = .{
             .type_ = .OBJ_FUNCTION,
             .next = vm.objects,
-            .is_marked = false,
         };
         function.allocator = allocator;
         vm.objects = &function.object;
@@ -198,7 +203,6 @@ pub const ObjNative = struct {
         obj_native.object = .{
             .type_ = .OBJ_NATIVE,
             .next = vm.objects,
-            .is_marked = false,
         };
         vm.objects = &obj_native.object;
         vm.bytes_allocated += @sizeOf(ObjNative);
@@ -239,7 +243,6 @@ pub const ObjClosure = struct {
             .object = .{
                 .type_ = .OBJ_CLOSURE,
                 .next = vm.objects,
-                .is_marked = false,
             },
         };
         vm.objects = &closure.object;
@@ -276,7 +279,6 @@ pub const ObjUpvalue = struct {
             .object = .{
                 .type_ = .OBJ_UPVALUE,
                 .next = vm.objects,
-                .is_marked = false,
             },
         };
         vm.objects = &upvalue.object;
@@ -292,6 +294,7 @@ pub const ObjUpvalue = struct {
 pub const ObjClass = struct {
     object: Object,
     name: *ObjString,
+    methods: Table,
     allocator: std.mem.Allocator,
     pub fn init(
         vm: *VM,
@@ -303,10 +306,10 @@ pub const ObjClass = struct {
         };
         class.allocator = allocator;
         class.name = name;
+        class.methods = Table.init(allocator);
         class.object = .{
             .type_ = .OBJ_CLASS,
             .next = vm.objects,
-            .is_marked = false,
         };
         vm.objects = &class.object;
         vm.bytes_allocated += @sizeOf(ObjClass);
@@ -314,6 +317,7 @@ pub const ObjClass = struct {
     }
     pub fn deinit(self: *ObjClass) usize {
         const freed = @sizeOf(ObjClass);
+        self.methods.deinit();
         self.allocator.destroy(self);
         return freed;
     }
@@ -338,7 +342,6 @@ pub const ObjInstance = struct {
         instance.fields = Table.init(allocator);
         instance.object = .{
             .type_ = .OBJ_INSTANCE,
-            .is_marked = false,
             .next = vm.objects,
         };
         vm.objects = &instance.object;
@@ -347,6 +350,38 @@ pub const ObjInstance = struct {
     pub fn deinit(self: *ObjInstance) usize {
         const freed = @sizeOf(ObjInstance);
         self.fields.deinit();
+        self.allocator.destroy(self);
+        return freed;
+    }
+};
+
+pub const ObjBoundMethod = struct {
+    object: Object,
+    reciever: Value,
+    method: *ObjClosure,
+    allocator: std.mem.Allocator,
+    pub fn init(
+        vm: *VM,
+        allocator: std.mem.Allocator,
+        reciever: Value,
+        method: *ObjClosure,
+    ) *ObjBoundMethod {
+        var bound_method = allocator.create(ObjBoundMethod) catch {
+            @panic("Allocation error");
+        };
+        bound_method.allocator = allocator;
+        bound_method.reciever = reciever;
+        bound_method.method = method;
+        bound_method.object = .{
+            .type_ = .OBJ_BOUND_METHOD,
+            .next = vm.objects,
+        };
+        vm.bytes_allocated += @sizeOf(ObjBoundMethod);
+        vm.objects = &bound_method.object;
+        return bound_method;
+    }
+    pub fn deinit(self: *ObjBoundMethod) usize {
+        const freed = @sizeOf(ObjBoundMethod);
         self.allocator.destroy(self);
         return freed;
     }

@@ -17,6 +17,7 @@ const ObjClosure = object_mod.ObjClosure;
 const ObjFunction = object_mod.ObjFunction;
 const ObjClass = object_mod.ObjClass;
 const ObjInstance = object_mod.ObjInstance;
+const ObjBoundMethod = object_mod.ObjBoundMethod;
 const markCompilerRoots = compiler_mod.markCompilerRoots;
 
 pub const DEBUG_STRESS_GC = ((build_mode == .Debug) and false);
@@ -127,11 +128,17 @@ fn blackenObject(vm: *VM, object: *Object) void {
         .OBJ_CLASS => {
             const class: *ObjClass = @fieldParentPtr("object", object);
             markObject(vm, &class.name.object);
+            markTable(vm, &class.methods);
         },
         .OBJ_INSTANCE => {
             const instance: *ObjInstance = @fieldParentPtr("object", object);
             markObject(vm, &instance.class.object);
             markTable(vm, &instance.fields);
+        },
+        .OBJ_BOUND_METHOD => {
+            const bound_method: *ObjBoundMethod = @fieldParentPtr("object", object);
+            markObject(vm, &bound_method.method.object);
+            markValue(vm, bound_method.reciever);
         },
         .OBJ_STRING, .OBJ_NATIVE => {},
     }

@@ -42,6 +42,7 @@ pub const OpCode = enum(u8) {
     OP_CLOSURE,
     OP_CLOSE_UPVALUE,
     OP_CLASS,
+    OP_METHOD,
 };
 
 pub const Chunk = struct {

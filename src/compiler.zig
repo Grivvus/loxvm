@@ -465,10 +465,28 @@ fn classDeclaration(parser: *Parser) !void {
     try declareVarible(parser);
     try emitOpcodes(parser, @intFromEnum(OpCode.OP_CLASS), name_constant);
     try defineVariable(parser, name_constant);
+    try variable(parser, false);
 
     parser.consume(.LEFT_BRACE, "Expect '{' after class declaration");
 
+    while (!parser.check(.RIGHT_BRACE) and !parser.check(.EOF)) {
+        try method(parser);
+    }
+
     parser.consume(.RIGHT_BRACE, "Expect '}' after class body");
+
+    try emitOpcode(parser, @intFromEnum(OpCode.OP_POP));
+}
+
+fn method(parser: *Parser) !void {
+    parser.consume(.IDENTIFIER, "Expect method name");
+    const constant = try identifierConstant(parser, parser.prev);
+    try function(parser, .FUNCTION, ObjString.init(
+        parser.vm,
+        parser.object_allocator,
+        parser.prev.lexeme,
+    ));
+    try emitOpcodes(parser, @intFromEnum(OpCode.OP_METHOD), constant);
 }
 
 fn varDeclaration(parser: *Parser) !void {

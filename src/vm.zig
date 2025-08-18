@@ -22,6 +22,7 @@ const ObjClosure = object.ObjClosure;
 const ObjUpvalue = object.ObjUpvalue;
 const ObjClass = object.ObjClass;
 const ObjInstance = object.ObjInstance;
+const ObjBoundMethod = object.ObjBoundMethod;
 const Table = table.Table;
 const build_mode = @import("builtin").mode;
 
@@ -142,6 +143,10 @@ pub const VM = struct {
                         class,
                     ).object);
                     return true;
+                },
+                ObjType.OBJ_BOUND_METHOD => {
+                    const bound_method = callee.asObject().as(ObjBoundMethod);
+                    return self.callValue(Value.initObject(&bound_method.method.object), arg_count);
                 },
                 else => {
                     _ = self.throw("Not callable object");
@@ -420,7 +425,9 @@ pub const VM = struct {
                         _ = vm.pop();
                         vm.push(value);
                     } else {
-                        return vm.throw(try std.fmt.allocPrint(vm.arena_alloc, "undefined property '{s}'", .{name.str}));
+                        if (!try vm.bindMethod(instance.class, name)) {
+                            return InterpreterResult.INTERPRET_RUNTIME_ERROR;
+                        }
                     }
                 },
                 @intFromEnum(OpCode.OP_SET_PROPERTY) => {
@@ -470,6 +477,9 @@ pub const VM = struct {
                         readConstant(vm).asObject().as(ObjString),
                     ).object));
                 },
+                @intFromEnum(OpCode.OP_METHOD) => {
+                    try defineMethod(vm, readConstant(vm).asObject().as(ObjString));
+                },
                 else => {
                     std.debug.print("Unkown instruction {d}\n", .{instruction});
                     @panic("Error");
@@ -495,6 +505,23 @@ pub const VM = struct {
         return InterpreterResult.INTERPRET_RUNTIME_ERROR;
     }
 
+    fn bindMethod(self: *VM, class: *ObjClass, name: *ObjString) !bool {
+        if (class.methods.get(name)) |method| {
+            const bound = ObjBoundMethod.init(
+                self,
+                self.obj_alloc,
+                self.peek(0),
+                method.asObject().as(ObjClosure),
+            );
+            _ = self.pop();
+            self.push(Value.initObject(&bound.object));
+            return true;
+        } else {
+            _ = self.throw(try std.fmt.allocPrint(self.arena_alloc, "Undefined property {s}", .{name.str}));
+            return false;
+        }
+    }
+
     fn defineNative(
         self: *VM,
         name: []const u8,
@@ -516,6 +543,15 @@ pub const VM = struct {
         );
         _ = self.pop();
         _ = self.pop();
+    }
+
+    fn defineMethod(
+        self: *VM,
+        name: *ObjString,
+    ) !void {
+        const method = self.peek(0);
+        const class = self.peek(1).asObject().as(ObjClass);
+        try class.methods.put(name, method);
     }
 
     inline fn readByte(vm: *VM) u8 {
