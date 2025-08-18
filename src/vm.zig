@@ -67,13 +67,15 @@ pub const VM = struct {
     frame_count: u32 = 0,
     stack: [STACK_MAX_SIZE]Value,
     stack_top_index: usize = 0,
-    open_upvalues: ?*ObjUpvalue,
+    open_upvalues: ?*ObjUpvalue = null,
     globals: Table,
-    objects: ?*Object,
+    objects: ?*Object = null,
 
     bytes_allocated: usize = 0,
     next_gc: usize = 1024 * 1024,
     gray_stack: ArrayList(*Object),
+
+    init_str: *ObjString = undefined,
 
     arena_alloc: Allocator,
     obj_alloc: Allocator,
@@ -84,15 +86,14 @@ pub const VM = struct {
         var vm = VM{
             .frames = try allocator.alloc(CallFrame, FRAMES_MAX),
             .stack = undefined,
-            .open_upvalues = null,
             .globals = Table.init(allocator),
-            .objects = null,
             .gray_stack = ArrayList(*Object).init(allocator),
             .arena_alloc = allocator,
             .gpa = gpa,
             .obj_alloc = gpa.allocator(),
         };
         vm.resetStack();
+        vm.init_str = ObjString.init(&vm, vm.obj_alloc, "init");
         try vm.defineNative("clock", clockNative);
         return vm;
     }
@@ -142,11 +143,18 @@ pub const VM = struct {
                         self.obj_alloc,
                         class,
                     ).object);
+                    if (class.methods.get(self.init_str)) |init_method| {
+                        return call(self, init_method.asObject().as(ObjClosure), arg_count);
+                    } else if (arg_count != 0) {
+                        _ = self.throw(try std.fmt.allocPrint(self.arena_alloc, "expected 0 arguments but got {d}", .{arg_count}));
+                        return false;
+                    }
                     return true;
                 },
                 ObjType.OBJ_BOUND_METHOD => {
                     const bound_method = callee.asObject().as(ObjBoundMethod);
-                    return self.callValue(Value.initObject(&bound_method.method.object), arg_count);
+                    self.stack[self.stack_top_index - 1 - arg_count] = bound_method.reciever;
+                    return self.call(bound_method.method, arg_count);
                 },
                 else => {
                     _ = self.throw("Not callable object");
@@ -471,11 +479,12 @@ pub const VM = struct {
                     _ = vm.pop();
                 },
                 @intFromEnum(OpCode.OP_CLASS) => {
-                    vm.push(Value.initObject(&ObjClass.init(
+                    const class = ObjClass.init(
                         vm,
                         vm.obj_alloc,
                         readConstant(vm).asObject().as(ObjString),
-                    ).object));
+                    );
+                    vm.push(Value.initObject(&class.object));
                 },
                 @intFromEnum(OpCode.OP_METHOD) => {
                     try defineMethod(vm, readConstant(vm).asObject().as(ObjString));
@@ -552,6 +561,7 @@ pub const VM = struct {
         const method = self.peek(0);
         const class = self.peek(1).asObject().as(ObjClass);
         try class.methods.put(name, method);
+        _ = self.pop();
     }
 
     inline fn readByte(vm: *VM) u8 {

@@ -77,6 +77,8 @@ const Upvalue = struct {
 
 pub const FunctionType = enum {
     FUNCTION,
+    METHOD,
+    INITIALIZER,
     SCRIPT,
 };
 
@@ -117,9 +119,14 @@ const Compiler = struct {
         current_compiler = compiler;
 
         var local = &compiler.locals[compiler.local_cnt];
-        local.depth = 0;
-        local.name = Token.init(.IDENTIFIER, "", 0);
         local.is_captured = false;
+        if (function_type != .FUNCTION) {
+            local.depth = 0;
+            local.name = Token.init(.IDENTIFIER, "this", 4);
+        } else {
+            local.depth = 0;
+            local.name = Token.init(.IDENTIFIER, "", 0);
+        }
         compiler.local_cnt += 1;
 
         return compiler;
@@ -192,6 +199,8 @@ const Compiler = struct {
         return upvalue_cnt;
     }
 };
+
+pub const ClassCompiler = struct { enclosing: ?*ClassCompiler };
 
 const Precedence = enum(u8) {
     NONE,
@@ -387,7 +396,7 @@ fn fillUpRules() void {
         .precedence = .NONE,
     };
     rules[@intFromEnum(tt.THIS)] = ParseRule{
-        .prefix = null,
+        .prefix = this,
         .infix = null,
         .precedence = .NONE,
     };
@@ -423,6 +432,7 @@ fn getRule(tt: TokenType) *ParseRule {
 }
 
 var current_compiler: ?*Compiler = null;
+var current_class: ?*ClassCompiler = null;
 pub fn compile(
     source: []const u8,
     vm: *VM,
@@ -465,6 +475,11 @@ fn classDeclaration(parser: *Parser) !void {
     try declareVarible(parser);
     try emitOpcodes(parser, @intFromEnum(OpCode.OP_CLASS), name_constant);
     try defineVariable(parser, name_constant);
+
+    var cc: ClassCompiler = undefined;
+    cc.enclosing = current_class;
+    current_class = &cc;
+
     try variable(parser, false);
 
     parser.consume(.LEFT_BRACE, "Expect '{' after class declaration");
@@ -476,12 +491,17 @@ fn classDeclaration(parser: *Parser) !void {
     parser.consume(.RIGHT_BRACE, "Expect '}' after class body");
 
     try emitOpcode(parser, @intFromEnum(OpCode.OP_POP));
+    current_class = cc.enclosing;
 }
 
 fn method(parser: *Parser) !void {
     parser.consume(.IDENTIFIER, "Expect method name");
     const constant = try identifierConstant(parser, parser.prev);
-    try function(parser, .FUNCTION, ObjString.init(
+    var function_type: FunctionType = .METHOD;
+    if (std.mem.eql(u8, parser.prev.lexeme, "init")) {
+        function_type = .INITIALIZER;
+    }
+    try function(parser, function_type, ObjString.init(
         parser.vm,
         parser.object_allocator,
         parser.prev.lexeme,
@@ -690,6 +710,9 @@ fn returnStatement(parser: *Parser) !void {
     if (parser.match(.SEMICOLON)) {
         try emitReturn(parser);
     } else {
+        if (current_compiler.?.function_type == .INITIALIZER) {
+            errorAt(parser.current, "Can't return value from initializer");
+        }
         try expression(parser);
         parser.consume(.SEMICOLON, "Expect ';' after return value");
         try emitOpcode(parser, @intFromEnum(OpCode.OP_RETURN));
@@ -939,6 +962,14 @@ fn variable(parser: *Parser, can_assign: bool) !void {
     }
 }
 
+fn this(parser: *Parser, can_assign: bool) !void {
+    _ = can_assign;
+    if (current_class == null) {
+        errorAt(parser.current, "Cannot reference 'this' outside of a class");
+    }
+    try variable(parser, false);
+}
+
 fn parsePrecedence(precedence: Precedence, parser: *Parser) !void {
     parser.advance();
     const prefixRule = getRule(parser.prev.type_).prefix;
@@ -992,7 +1023,11 @@ fn emitOpcodes(parser: *Parser, op1: u8, op2: u8) !void {
 }
 
 fn emitReturn(parser: *Parser) !void {
-    try emitOpcode(parser, @intFromEnum(OpCode.OP_NIL));
+    if (current_compiler.?.function_type == .INITIALIZER) {
+        try emitOpcodes(parser, @intFromEnum(OpCode.OP_GET_LOCAL), 0);
+    } else {
+        try emitOpcode(parser, @intFromEnum(OpCode.OP_NIL));
+    }
     try emitOpcode(parser, @intFromEnum(OpCode.OP_RETURN));
 }
 

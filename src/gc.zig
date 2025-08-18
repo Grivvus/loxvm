@@ -54,6 +54,8 @@ pub fn markRoots(vm: *VM) void {
         upvalue_iter = upvalue_iter.?.next;
     }
 
+    markObject(vm, &vm.init_str.object);
+
     markTable(vm, &vm.globals);
 
     markCompilerRoots();

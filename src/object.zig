@@ -3,6 +3,7 @@ const VM = @import("vm.zig").VM;
 const Chunk = @import("bytecode.zig").Chunk;
 const Value = @import("value.zig").Value;
 const Table = @import("table.zig").Table;
+const Context = @import("table.zig").HashMapContext;
 
 const build_mode = @import("builtin").mode;
 

@@ -18,5 +18,5 @@ pub const Table = HashMap(
     *object.ObjString,
     value.Value,
     HashMapContext,
-    80,
+    std.hash_map.default_max_load_percentage,
 );
