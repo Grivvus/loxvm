@@ -48,6 +48,8 @@ pub fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
         @intFromEnum(OpCode.OP_SET_GLOBAL) => constantInstruction("OP_SET_GLOBAL", chunk, offset),
         @intFromEnum(OpCode.OP_GET_LOCAL) => byteInstruction("OP_GET_LOCAL", chunk, offset),
         @intFromEnum(OpCode.OP_SET_LOCAL) => byteInstruction("OP_SET_LOCAL", chunk, offset),
+        @intFromEnum(OpCode.OP_GET_PROPERTY) => constantInstruction("OP_GET_PROPERTY", chunk, offset),
+        @intFromEnum(OpCode.OP_SET_PROPERTY) => constantInstruction("OP_SET_PROPERTY", chunk, offset),
         @intFromEnum(OpCode.OP_JUMP) => jumpInstruction("OP_JUMP", 1, chunk, offset),
         @intFromEnum(OpCode.OP_JUMP_IF_FALSE) => jumpInstruction("OP_JUMP_IF_FALSE", 1, chunk, offset),
         @intFromEnum(OpCode.OP_LOOP) => jumpInstruction("OP_LOOP", -1, chunk, offset),

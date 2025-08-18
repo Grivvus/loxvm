@@ -243,8 +243,8 @@ fn fillUpRules() void {
     };
     rules[@intFromEnum(tt.DOT)] = ParseRule{
         .prefix = null,
-        .infix = null,
-        .precedence = .NONE,
+        .infix = dot,
+        .precedence = .CALL,
     };
     rules[@intFromEnum(tt.MINUS)] = ParseRule{
         .prefix = unary,
@@ -776,6 +776,18 @@ fn expressionStatement(parser: *Parser) !void {
     try expression(parser);
     parser.consume(.SEMICOLON, "Expect ';' after expression.");
     try emitOpcode(parser, @intFromEnum(OpCode.OP_POP));
+}
+
+fn dot(parser: *Parser, can_assign: bool) !void {
+    parser.consume(.IDENTIFIER, "Expect identifier after '.'");
+    const name = try identifierConstant(parser, parser.prev);
+
+    if (can_assign and parser.match(.EQUAL)) {
+        try expression(parser);
+        try emitOpcodes(parser, @intFromEnum(OpCode.OP_SET_PROPERTY), name);
+    } else {
+        try emitOpcodes(parser, @intFromEnum(OpCode.OP_GET_PROPERTY), name);
+    }
 }
 
 fn number(parser: *Parser, can_assign: bool) !void {

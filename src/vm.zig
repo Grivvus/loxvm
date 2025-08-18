@@ -410,6 +410,28 @@ pub const VM = struct {
                     const slot = readByte(vm);
                     frame.closure.upvalues[slot].location.* = vm.peek(0);
                 },
+                @intFromEnum(OpCode.OP_GET_PROPERTY) => {
+                    if (!vm.peek(0).asObject().isObjInstance()) {
+                        return vm.throw("Only instances have properties");
+                    }
+                    const instance = vm.peek(0).asObject().as(ObjInstance);
+                    const name = readConstant(vm).asObject().as(ObjString);
+                    if (instance.fields.get(name)) |value| {
+                        _ = vm.pop();
+                        vm.push(value);
+                    } else {
+                        return vm.throw(try std.fmt.allocPrint(vm.arena_alloc, "undefined property '{s}'", .{name.str}));
+                    }
+                },
+                @intFromEnum(OpCode.OP_SET_PROPERTY) => {
+                    const instance = vm.peek(1).asObject().as(ObjInstance);
+                    const value = vm.peek(0);
+                    const name = readConstant(vm).asObject().as(ObjString);
+                    try instance.fields.put(name, value);
+                    const poped_value = vm.pop();
+                    _ = vm.pop();
+                    vm.push(poped_value);
+                },
                 @intFromEnum(OpCode.OP_CALL) => {
                     const arg_count = readByte(vm);
                     const callee = vm.peek(arg_count);
