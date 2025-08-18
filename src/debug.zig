@@ -61,13 +61,14 @@ pub fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
         ),
         @intFromEnum(OpCode.OP_GET_UPVALUE) => byteInstruction("OP_GET_VALUE", chunk, offset),
         @intFromEnum(OpCode.OP_SET_UPVALUE) => byteInstruction("OP_SET_UPVALUE", chunk, offset),
+        @intFromEnum(OpCode.OP_CLASS) => constantInstruction("OP_CLASS", chunk, offset),
+        @intFromEnum(OpCode.OP_METHOD) => constantInstruction("OP_METHOD", chunk, offset),
+        @intFromEnum(OpCode.OP_CLOSE_UPVALUE) => simpleInstruction("OP_CLOSE_UPVALUE", offset),
+        @intFromEnum(OpCode.OP_INVOKE) => invokeInstruction("OP_INVOKE", chunk, offset),
         else => {
             print("Unkown opcode {d}\n", .{instruction});
             return offset + 1;
         },
-        @intFromEnum(OpCode.OP_CLASS) => constantInstruction("OP_CLASS", chunk, offset),
-        @intFromEnum(OpCode.OP_METHOD) => constantInstruction("OP_METHOD", chunk, offset),
-        @intFromEnum(OpCode.OP_CLOSE_UPVALUE) => simpleInstruction("OP_CLOSE_UPVALUE", offset),
     };
 }
 
@@ -118,6 +119,15 @@ fn jumpInstruction(name: []const u8, sign: i32, chunk: Chunk, offset: usize) usi
     const next_ip: u16 = @intCast(chunk.code.items[offset + 1]);
     const jump = (next_ip << 8) | chunk.code.items[offset + 2];
     print("{s:<16} {d:0>4} -> {d}\n", .{ name, offset, offset_int + 3 + sign * jump });
+    return offset + 3;
+}
+
+fn invokeInstruction(name: []const u8, chunk: Chunk, offset: usize) usize {
+    const constant = chunk.code.items[offset + 1];
+    const arg_cnt = chunk.code.items[offset + 2];
+    print("{s:<16} ({d} args) {d:0>4} '", .{ name, arg_cnt, constant });
+    printValue(chunk.constants.values.items[constant]);
+    print("'\n", .{});
     return offset + 3;
 }
 

@@ -826,6 +826,10 @@ fn dot(parser: *Parser, can_assign: bool) !void {
     if (can_assign and parser.match(.EQUAL)) {
         try expression(parser);
         try emitOpcodes(parser, @intFromEnum(OpCode.OP_SET_PROPERTY), name);
+    } else if (parser.match(.LEFT_PAREN)) {
+        const arg_cnt = try argumentList(parser);
+        try emitOpcodes(parser, @intFromEnum(OpCode.OP_INVOKE), name);
+        try emitOpcode(parser, arg_cnt);
     } else {
         try emitOpcodes(parser, @intFromEnum(OpCode.OP_GET_PROPERTY), name);
     }

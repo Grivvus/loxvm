@@ -489,6 +489,14 @@ pub const VM = struct {
                 @intFromEnum(OpCode.OP_METHOD) => {
                     try defineMethod(vm, readConstant(vm).asObject().as(ObjString));
                 },
+                @intFromEnum(OpCode.OP_INVOKE) => {
+                    const method = readConstant(vm).asObject().as(ObjString);
+                    const arg_cnt = readByte(vm);
+                    if (!try invoke(vm, method, arg_cnt)) {
+                        return InterpreterResult.INTERPRET_RUNTIME_ERROR;
+                    }
+                    frame = &vm.frames[vm.frame_count - 1];
+                },
                 else => {
                     std.debug.print("Unkown instruction {d}\n", .{instruction});
                     @panic("Error");
@@ -562,6 +570,35 @@ pub const VM = struct {
         const class = self.peek(1).asObject().as(ObjClass);
         try class.methods.put(name, method);
         _ = self.pop();
+    }
+
+    fn invoke(self: *VM, name: *ObjString, arg_cnt: u8) !bool {
+        const reciever = self.peek(arg_cnt);
+        if (!reciever.asObject().isObjInstance()) {
+            _ = self.throw("Only instances have methods");
+            return false;
+        }
+
+        const instance = reciever.asObject().as(ObjInstance);
+        if (instance.fields.get(name)) |value| {
+            self.stack[self.stack_top_index - 1 - arg_cnt] = value;
+            return self.callValue(value, arg_cnt);
+        }
+        return try self.invokeFromClass(instance.class, name, arg_cnt);
+    }
+
+    fn invokeFromClass(
+        self: *VM,
+        class: *ObjClass,
+        name: *ObjString,
+        arg_cnt: u8,
+    ) !bool {
+        if (class.methods.get(name)) |method| {
+            return try self.call(method.asObject().as(ObjClosure), arg_cnt);
+        } else {
+            _ = self.throw(try std.fmt.allocPrint(self.arena_alloc, "Undefined property {s}", .{name.str}));
+            return false;
+        }
     }
 
     inline fn readByte(vm: *VM) u8 {
