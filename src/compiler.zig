@@ -200,7 +200,10 @@ const Compiler = struct {
     }
 };
 
-pub const ClassCompiler = struct { enclosing: ?*ClassCompiler };
+pub const ClassCompiler = struct {
+    enclosing: ?*ClassCompiler,
+    has_superclass: bool,
+};
 
 const Precedence = enum(u8) {
     NONE,
@@ -391,7 +394,7 @@ fn fillUpRules() void {
         .precedence = .NONE,
     };
     rules[@intFromEnum(tt.SUPER)] = ParseRule{
-        .prefix = null,
+        .prefix = super,
         .infix = null,
         .precedence = .NONE,
     };
@@ -471,16 +474,37 @@ fn declaration(parser: *Parser) !void {
 
 fn classDeclaration(parser: *Parser) !void {
     parser.consume(.IDENTIFIER, "Expect class name");
+    const class_name = parser.prev;
     const name_constant = try identifierConstant(parser, parser.prev);
+
     try declareVarible(parser);
     try emitOpcodes(parser, @intFromEnum(OpCode.OP_CLASS), name_constant);
     try defineVariable(parser, name_constant);
 
     var cc: ClassCompiler = undefined;
     cc.enclosing = current_class;
+    cc.has_superclass = false;
     current_class = &cc;
 
-    try variable(parser, false);
+    if (parser.match(.LESS)) {
+        parser.consume(.IDENTIFIER, "Expect superclass name after '<'");
+        try variable(parser, false);
+
+        if (std.mem.eql(u8, parser.prev.lexeme, class_name.lexeme)) {
+            errorAt(parser.prev, "Can't inherit from itself");
+        }
+
+        current_compiler.?.beginScope();
+        addLocal(parser, Token.init(.IDENTIFIER, "super", 5));
+        try defineVariable(parser, 0);
+
+        try namedVariable(parser, class_name, false);
+        try emitOpcode(parser, @intFromEnum(OpCode.OP_INHERIT));
+
+        current_class.?.has_superclass = true;
+    }
+
+    try namedVariable(parser, class_name, false);
 
     parser.consume(.LEFT_BRACE, "Expect '{' after class declaration");
 
@@ -491,7 +515,11 @@ fn classDeclaration(parser: *Parser) !void {
     parser.consume(.RIGHT_BRACE, "Expect '}' after class body");
 
     try emitOpcode(parser, @intFromEnum(OpCode.OP_POP));
-    current_class = cc.enclosing;
+
+    if (current_class.?.has_superclass) {
+        try current_compiler.?.endScope(parser);
+    }
+    current_class = current_class.?.enclosing;
 }
 
 fn method(parser: *Parser) !void {
@@ -939,9 +967,12 @@ fn string(parser: *Parser, can_assign: bool) !void {
 }
 
 fn variable(parser: *Parser, can_assign: bool) !void {
+    try namedVariable(parser, parser.prev, can_assign);
+}
+
+fn namedVariable(parser: *Parser, name: Token, can_assign: bool) !void {
     var get_op: u8 = undefined;
     var set_op: u8 = undefined;
-    const name = parser.prev;
     var arg: usize = undefined;
     if (current_compiler.?.resolveLocal(name)) |index| {
         arg = index;
@@ -963,6 +994,30 @@ fn variable(parser: *Parser, can_assign: bool) !void {
         try emitOpcodes(parser, set_op, @intCast(arg));
     } else {
         try emitOpcodes(parser, get_op, @intCast(arg));
+    }
+}
+
+fn super(parser: *Parser, can_assign: bool) !void {
+    _ = can_assign;
+    if (current_class == null) {
+        errorAt(parser.prev, "Can't use 'super' outside of a class");
+    } else if (!current_class.?.has_superclass) {
+        errorAt(parser.prev, "Can't use 'super' in a class with no superclass");
+    }
+    parser.consume(.DOT, "Expect '.' after 'super'");
+    parser.consume(.IDENTIFIER, "Expect identifier after '.'");
+
+    const name = try identifierConstant(parser, parser.prev);
+
+    try namedVariable(parser, Token.init(.IDENTIFIER, "this", 4), false);
+    if (parser.match(.LEFT_PAREN)) {
+        const arg_cnt = try argumentList(parser);
+        try namedVariable(parser, Token.init(.IDENTIFIER, "super", 5), false);
+        try emitOpcodes(parser, @intFromEnum(OpCode.OP_SUPER_INVOKE), name);
+        try emitOpcode(parser, arg_cnt);
+    } else {
+        try namedVariable(parser, Token.init(.IDENTIFIER, "super", 5), false);
+        try emitOpcodes(parser, @intFromEnum(OpCode.OP_GET_SUPER), name);
     }
 }
 

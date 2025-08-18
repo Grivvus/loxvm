@@ -307,8 +307,6 @@ pub const VM = struct {
                 @intFromEnum(OpCode.OP_CONSTANT) => {
                     const constant = readConstant(vm);
                     vm.push(constant);
-                    // debug.printValue(value);
-                    // std.debug.print("\n", .{});
                 },
                 @intFromEnum(OpCode.OP_NIL) => {
                     vm.push(Value.initNil());
@@ -496,6 +494,34 @@ pub const VM = struct {
                         return InterpreterResult.INTERPRET_RUNTIME_ERROR;
                     }
                     frame = &vm.frames[vm.frame_count - 1];
+                },
+                @intFromEnum(OpCode.OP_SUPER_INVOKE) => {
+                    const method = readConstant(vm).asObject().as(ObjString);
+                    const arg_cnt = readByte(vm);
+                    const superclass = vm.pop().asObject().as(ObjClass);
+                    if (!try vm.invokeFromClass(superclass, method, arg_cnt)) {
+                        return InterpreterResult.INTERPRET_RUNTIME_ERROR;
+                    }
+                    frame = &vm.frames[vm.frame_count - 1];
+                },
+                @intFromEnum(OpCode.OP_INHERIT) => {
+                    if (!vm.peek(1).asObject().isObjClass()) {
+                        return vm.throw("Can't inherit not from a class");
+                    }
+                    const superclass = vm.peek(1).asObject().as(ObjClass);
+                    const subclass = vm.peek(0).asObject().as(ObjClass);
+                    var super_keys_iter = superclass.methods.keyIterator();
+                    while (super_keys_iter.next()) |key| {
+                        try subclass.methods.put(key.*, superclass.methods.get(key.*).?);
+                    }
+                    _ = vm.pop();
+                },
+                @intFromEnum(OpCode.OP_GET_SUPER) => {
+                    const name = readConstant(vm).asObject().as(ObjString);
+                    const superclass = vm.pop().asObject().as(ObjClass);
+                    if (!try bindMethod(vm, superclass, name)) {
+                        return InterpreterResult.INTERPRET_RUNTIME_ERROR;
+                    }
                 },
                 else => {
                     std.debug.print("Unkown instruction {d}\n", .{instruction});

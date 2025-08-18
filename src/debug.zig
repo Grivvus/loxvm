@@ -65,6 +65,9 @@ pub fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
         @intFromEnum(OpCode.OP_METHOD) => constantInstruction("OP_METHOD", chunk, offset),
         @intFromEnum(OpCode.OP_CLOSE_UPVALUE) => simpleInstruction("OP_CLOSE_UPVALUE", offset),
         @intFromEnum(OpCode.OP_INVOKE) => invokeInstruction("OP_INVOKE", chunk, offset),
+        @intFromEnum(OpCode.OP_SUPER_INVOKE) => invokeInstruction("OP_SUPER_INVOKE", chunk, offset),
+        @intFromEnum(OpCode.OP_INHERIT) => simpleInstruction("OP_INHERIT", offset),
+        @intFromEnum(OpCode.OP_GET_SUPER) => constantInstruction("OP_GET_SUPER", chunk, offset),
         else => {
             print("Unkown opcode {d}\n", .{instruction});
             return offset + 1;

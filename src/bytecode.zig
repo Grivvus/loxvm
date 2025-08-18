@@ -20,7 +20,9 @@ pub const OpCode = enum(u8) {
     OP_SET_LOCAL,
     OP_SET_PROPERTY,
     OP_GET_PROPERTY,
+    OP_GET_SUPER,
     OP_INVOKE,
+    OP_SUPER_INVOKE,
     OP_PRINT,
     OP_JUMP,
     OP_JUMP_IF_FALSE,
@@ -44,6 +46,7 @@ pub const OpCode = enum(u8) {
     OP_CLOSE_UPVALUE,
     OP_CLASS,
     OP_METHOD,
+    OP_INHERIT,
 };
 
 pub const Chunk = struct {
