@@ -448,13 +448,27 @@ fn expression(parser: *Parser) !void {
 }
 
 fn declaration(parser: *Parser) !void {
-    if (parser.match(.FUN)) {
+    if (parser.match(.CLASS)) {
+        try classDeclaration(parser);
+    } else if (parser.match(.FUN)) {
         try funDeclaration(parser);
     } else if (parser.match(.VAR)) {
         try varDeclaration(parser);
     } else {
         try statement(parser);
     }
+}
+
+fn classDeclaration(parser: *Parser) !void {
+    parser.consume(.IDENTIFIER, "Expect class name");
+    const name_constant = try identifierConstant(parser, parser.prev);
+    try declareVarible(parser);
+    try emitOpcodes(parser, @intFromEnum(OpCode.OP_CLASS), name_constant);
+    try defineVariable(parser, name_constant);
+
+    parser.consume(.LEFT_BRACE, "Expect '{' after class declaration");
+
+    parser.consume(.RIGHT_BRACE, "Expect '}' after class body");
 }
 
 fn varDeclaration(parser: *Parser) !void {

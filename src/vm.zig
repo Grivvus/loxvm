@@ -19,6 +19,7 @@ const ObjFunction = object.ObjFunction;
 const ObjNative = object.ObjNative;
 const ObjClosure = object.ObjClosure;
 const ObjUpvalue = object.ObjUpvalue;
+const ObjClass = object.ObjClass;
 const build_mode = @import("builtin").mode;
 
 const FRAMES_MAX = 64;
@@ -448,6 +449,13 @@ pub const VM = struct {
                 @intFromEnum(OpCode.OP_CLOSE_UPVALUE) => {
                     vm.closeUpvalue(&vm.stack[vm.stack_top_index - 1]);
                     _ = vm.pop();
+                },
+                @intFromEnum(OpCode.OP_CLASS) => {
+                    vm.push(Value.initObject(&ObjClass.init(
+                        vm,
+                        vm.obj_alloc,
+                        readConstant(vm).asObject().as(ObjString),
+                    ).object));
                 },
                 else => {
                     std.debug.print("Unkown instruction {d}\n", .{instruction});

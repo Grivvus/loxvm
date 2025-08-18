@@ -13,6 +13,7 @@ pub const ObjType = enum {
     OBJ_CLOSURE,
     OBJ_NATIVE,
     OBJ_UPVALUE,
+    OBJ_CLASS,
 };
 
 pub const NativeFn = *const (fn (argc: usize, args: []Value) Value);
@@ -33,6 +34,7 @@ pub const Object = struct {
             .OBJ_CLOSURE => self.as(ObjClosure).deinit(),
             .OBJ_NATIVE => self.as(ObjNative).deinit(),
             .OBJ_UPVALUE => self.as(ObjUpvalue).deinit(),
+            .OBJ_CLASS => self.as(ObjClass).deinit(),
         };
     }
 
@@ -51,6 +53,9 @@ pub const Object = struct {
     pub fn isObjUpvalue(self: Object) bool {
         return self.type_ == .OBJ_UPVALUE;
     }
+    pub fn isObjClass(self: Object) bool {
+        return self.type_ == .OBJ_CLASS;
+    }
 
     pub fn as(self: *Object, comptime T: type) *T {
         switch (self.type_) {
@@ -59,6 +64,7 @@ pub const Object = struct {
             .OBJ_CLOSURE => std.debug.assert(self.isObjClosure()),
             .OBJ_NATIVE => std.debug.assert(self.isObjNative()),
             .OBJ_UPVALUE => std.debug.assert(self.isObjUpvalue()),
+            .OBJ_CLASS => std.debug.assert(self.isObjClass()),
         }
         return @alignCast(@fieldParentPtr("object", self));
     }
@@ -70,6 +76,7 @@ pub const Object = struct {
             .OBJ_CLOSURE => self.as(ObjClosure).function.print(),
             .OBJ_NATIVE => std.debug.print("<native fn>", .{}),
             .OBJ_UPVALUE => std.debug.print("upvalue", .{}),
+            .OBJ_CLASS => std.debug.print("class <{s}>", .{self.as(ObjClass).name.str}),
         }
     }
 };
@@ -266,6 +273,36 @@ pub const ObjUpvalue = struct {
     }
     pub fn deinit(self: *ObjUpvalue) usize {
         const freed = @sizeOf(ObjUpvalue);
+        self.allocator.destroy(self);
+        return freed;
+    }
+};
+
+pub const ObjClass = struct {
+    object: Object,
+    name: *ObjString,
+    allocator: std.mem.Allocator,
+    pub fn init(
+        vm: *VM,
+        allocator: std.mem.Allocator,
+        name: *ObjString,
+    ) *ObjClass {
+        var class = allocator.create(ObjClass) catch {
+            @panic("Allocation error");
+        };
+        class.allocator = allocator;
+        class.name = name;
+        class.object = .{
+            .type_ = .OBJ_CLASS,
+            .next = vm.objects,
+            .is_marked = false,
+        };
+        vm.objects = &class.object;
+        vm.bytes_allocated += @sizeOf(ObjClass);
+        return class;
+    }
+    pub fn deinit(self: *ObjClass) usize {
+        const freed = @sizeOf(ObjClass);
         self.allocator.destroy(self);
         return freed;
     }

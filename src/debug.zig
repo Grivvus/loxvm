@@ -63,6 +63,7 @@ pub fn disassembleInstruction(chunk: Chunk, offset: usize) usize {
             print("Unkown opcode {d}\n", .{instruction});
             return offset + 1;
         },
+        @intFromEnum(OpCode.OP_CLASS) => constantInstruction("OP_CLASS", chunk, offset),
         @intFromEnum(OpCode.OP_CLOSE_UPVALUE) => simpleInstruction("OP_CLOSE_UPVALUE", offset),
     };
 }

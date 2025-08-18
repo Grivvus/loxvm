@@ -14,6 +14,7 @@ const ObjString = object_mod.ObjString;
 const ObjUpvalue = object_mod.ObjUpvalue;
 const ObjClosure = object_mod.ObjClosure;
 const ObjFunction = object_mod.ObjFunction;
+const ObjClass = object_mod.ObjClass;
 const markCompilerRoots = compiler_mod.markCompilerRoots;
 
 pub const DEBUG_STRESS_GC = ((build_mode == .Debug) and false);
@@ -121,6 +122,10 @@ fn blackenObject(vm: *VM, object: *Object) void {
             for (0..closure.upvalue_cnt) |i| {
                 markObject(vm, &closure.upvalues[i].object);
             }
+        },
+        .OBJ_CLASS => {
+            const class: *ObjClass = @fieldParentPtr("object", object);
+            markObject(vm, &class.name.object);
         },
         .OBJ_STRING, .OBJ_NATIVE => {},
     }
