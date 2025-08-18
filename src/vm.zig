@@ -8,6 +8,7 @@ const object = @import("object.zig");
 const debug = @import("debug.zig");
 const compiler = @import("compiler.zig");
 const gc = @import("gc.zig");
+const table = @import("table.zig");
 const collectGarbage = gc.collectGarbage;
 const Chunk = bytecode.Chunk;
 const OpCode = bytecode.OpCode;
@@ -20,22 +21,13 @@ const ObjNative = object.ObjNative;
 const ObjClosure = object.ObjClosure;
 const ObjUpvalue = object.ObjUpvalue;
 const ObjClass = object.ObjClass;
+const ObjInstance = object.ObjInstance;
+const Table = table.Table;
 const build_mode = @import("builtin").mode;
 
 const FRAMES_MAX = 64;
 const STACK_MAX_SIZE = FRAMES_MAX * std.math.maxInt(u8);
 const DEBUG_STRESS_GC = gc.DEBUG_STRESS_GC;
-
-pub const HashMapContext = struct {
-    pub fn hash(self: @This(), s: *ObjString) u64 {
-        _ = self;
-        return s.hash();
-    }
-    pub fn eql(self: @This(), a: *ObjString, b: *ObjString) bool {
-        _ = self;
-        return std.mem.eql(u8, a.str, b.str);
-    }
-};
 
 fn clockNative(argc: usize, args: []Value) Value {
     _ = argc;
@@ -75,12 +67,7 @@ pub const VM = struct {
     stack: [STACK_MAX_SIZE]Value,
     stack_top_index: usize = 0,
     open_upvalues: ?*ObjUpvalue,
-    globals: HashMap(
-        *ObjString,
-        Value,
-        HashMapContext,
-        80,
-    ),
+    globals: Table,
     objects: ?*Object,
 
     bytes_allocated: usize = 0,
@@ -97,12 +84,7 @@ pub const VM = struct {
             .frames = try allocator.alloc(CallFrame, FRAMES_MAX),
             .stack = undefined,
             .open_upvalues = null,
-            .globals = HashMap(
-                *ObjString,
-                Value,
-                HashMapContext,
-                80,
-            ).init(allocator),
+            .globals = Table.init(allocator),
             .objects = null,
             .gray_stack = ArrayList(*Object).init(allocator),
             .arena_alloc = allocator,
@@ -150,6 +132,15 @@ pub const VM = struct {
                     );
                     self.stack_top_index -= arg_count + 1;
                     self.push(result);
+                    return true;
+                },
+                ObjType.OBJ_CLASS => {
+                    const class = callee.asObject().as(ObjClass);
+                    self.stack[self.stack_top_index - arg_count - 1] = Value.initObject(&ObjInstance.init(
+                        self,
+                        self.obj_alloc,
+                        class,
+                    ).object);
                     return true;
                 },
                 else => {

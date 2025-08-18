@@ -4,9 +4,10 @@ const build_mode = @import("builtin").mode;
 const value_mod = @import("value.zig");
 const object_mod = @import("object.zig");
 const compiler_mod = @import("compiler.zig");
+const table_mod = @import("table.zig");
 
 const VM = vm_mod.VM;
-const Context = vm_mod.HashMapContext;
+const Table = table_mod.Table;
 const Value = value_mod.Value;
 const ValueArray = value_mod.ValueArray;
 const Object = object_mod.Object;
@@ -15,6 +16,7 @@ const ObjUpvalue = object_mod.ObjUpvalue;
 const ObjClosure = object_mod.ObjClosure;
 const ObjFunction = object_mod.ObjFunction;
 const ObjClass = object_mod.ObjClass;
+const ObjInstance = object_mod.ObjInstance;
 const markCompilerRoots = compiler_mod.markCompilerRoots;
 
 pub const DEBUG_STRESS_GC = ((build_mode == .Debug) and false);
@@ -51,7 +53,7 @@ pub fn markRoots(vm: *VM) void {
         upvalue_iter = upvalue_iter.?.next;
     }
 
-    markTable(vm);
+    markTable(vm, &vm.globals);
 
     markCompilerRoots();
 }
@@ -77,8 +79,7 @@ pub fn markObject(vm: *VM, object: *Object) void {
     };
 }
 
-fn markTable(vm: *VM) void {
-    const table = vm.globals;
+fn markTable(vm: *VM, table: *Table) void {
     var iter = table.keyIterator();
     while (iter.next()) |key| {
         markObject(vm, &key.*.object);
@@ -126,6 +127,11 @@ fn blackenObject(vm: *VM, object: *Object) void {
         .OBJ_CLASS => {
             const class: *ObjClass = @fieldParentPtr("object", object);
             markObject(vm, &class.name.object);
+        },
+        .OBJ_INSTANCE => {
+            const instance: *ObjInstance = @fieldParentPtr("object", object);
+            markObject(vm, &instance.class.object);
+            markTable(vm, &instance.fields);
         },
         .OBJ_STRING, .OBJ_NATIVE => {},
     }

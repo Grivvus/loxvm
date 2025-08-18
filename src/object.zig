@@ -2,6 +2,7 @@ const std = @import("std");
 const VM = @import("vm.zig").VM;
 const Chunk = @import("bytecode.zig").Chunk;
 const Value = @import("value.zig").Value;
+const Table = @import("table.zig").Table;
 
 const build_mode = @import("builtin").mode;
 
@@ -14,6 +15,7 @@ pub const ObjType = enum {
     OBJ_NATIVE,
     OBJ_UPVALUE,
     OBJ_CLASS,
+    OBJ_INSTANCE,
 };
 
 pub const NativeFn = *const (fn (argc: usize, args: []Value) Value);
@@ -35,6 +37,7 @@ pub const Object = struct {
             .OBJ_NATIVE => self.as(ObjNative).deinit(),
             .OBJ_UPVALUE => self.as(ObjUpvalue).deinit(),
             .OBJ_CLASS => self.as(ObjClass).deinit(),
+            .OBJ_INSTANCE => self.as(ObjInstance).deinit(),
         };
     }
 
@@ -56,6 +59,9 @@ pub const Object = struct {
     pub fn isObjClass(self: Object) bool {
         return self.type_ == .OBJ_CLASS;
     }
+    pub fn isObjInstance(self: Object) bool {
+        return self.type_ == .OBJ_INSTANCE;
+    }
 
     pub fn as(self: *Object, comptime T: type) *T {
         switch (self.type_) {
@@ -65,6 +71,7 @@ pub const Object = struct {
             .OBJ_NATIVE => std.debug.assert(self.isObjNative()),
             .OBJ_UPVALUE => std.debug.assert(self.isObjUpvalue()),
             .OBJ_CLASS => std.debug.assert(self.isObjClass()),
+            .OBJ_INSTANCE => std.debug.assert(self.isObjInstance()),
         }
         return @alignCast(@fieldParentPtr("object", self));
     }
@@ -77,6 +84,10 @@ pub const Object = struct {
             .OBJ_NATIVE => std.debug.print("<native fn>", .{}),
             .OBJ_UPVALUE => std.debug.print("upvalue", .{}),
             .OBJ_CLASS => std.debug.print("class <{s}>", .{self.as(ObjClass).name.str}),
+            .OBJ_INSTANCE => std.debug.print("instance {d} of class {s}", .{
+                @intFromPtr(self.as(ObjInstance)),
+                self.as(ObjInstance).class.name.str,
+            }),
         }
     }
 };
@@ -303,6 +314,39 @@ pub const ObjClass = struct {
     }
     pub fn deinit(self: *ObjClass) usize {
         const freed = @sizeOf(ObjClass);
+        self.allocator.destroy(self);
+        return freed;
+    }
+};
+
+pub const ObjInstance = struct {
+    object: Object,
+    class: *ObjClass,
+    fields: Table,
+    allocator: std.mem.Allocator,
+    pub fn init(
+        vm: *VM,
+        allocator: std.mem.Allocator,
+        class: *ObjClass,
+    ) *ObjInstance {
+        var instance = allocator.create(ObjInstance) catch {
+            @panic("Allocation error");
+        };
+        vm.bytes_allocated += @sizeOf(ObjInstance);
+        instance.class = class;
+        instance.allocator = allocator;
+        instance.fields = Table.init(allocator);
+        instance.object = .{
+            .type_ = .OBJ_INSTANCE,
+            .is_marked = false,
+            .next = vm.objects,
+        };
+        vm.objects = &instance.object;
+        return instance;
+    }
+    pub fn deinit(self: *ObjInstance) usize {
+        const freed = @sizeOf(ObjInstance);
+        self.fields.deinit();
         self.allocator.destroy(self);
         return freed;
     }
