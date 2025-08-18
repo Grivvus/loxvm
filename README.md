@@ -7,8 +7,11 @@
 
 supports latest zig stable release
 
+```bash
+zig build && zig-out/bin/loxvm filename.lox # to run debug version
 ```
-zig build && zig-out/bin/loxvm filename.lox
+```bash
+zig build -Doptimize=ReleaseFast && zig-out/bin/loxvm filename.lox # to run optimized version
 ```
 
 ## supports
@@ -18,10 +21,12 @@ zig build && zig-out/bin/loxvm filename.lox
 - [x] functions
 - [x] closures
 - [x] garbage collection (works only in Debug and ReleaseFast modes)
-- [x] classes, objects and methods 
+- [x] classes, objects and methods
+- [x] inheritance, 'super' calls
 
 
-## work in progress
+## the book is finished
+
 
 
 
