@@ -18,9 +18,11 @@ zig build && zig-out/bin/loxvm filename.lox
 - [x] functions
 - [x] closures
 - [x] garbage collection (works only in Debug and ReleaseFast modes)
+- [x] classes, objects and methods 
 
 
 ## work in progress
+
 
 
 
