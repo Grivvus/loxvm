@@ -2,4 +2,3 @@ zig-out/
 .zig-cache/
 .vscode/
 .idea/
-*.lox

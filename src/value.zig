@@ -95,16 +95,20 @@ pub const Value = struct {
 
 pub const ValueArray = struct {
     values: ArrayList(Value),
+    allocator: Allocator,
 
     pub fn init(allocator: Allocator) ValueArray {
-        return ValueArray{ .values = ArrayList(Value).init(allocator) };
+        return ValueArray{
+            .values = ArrayList(Value).initCapacity(allocator, 0) catch @panic("Out of memory"),
+            .allocator = allocator,
+        };
     }
 
     pub fn deinit(self: *ValueArray) void {
-        self.values.deinit();
+        self.values.deinit(self.allocator);
     }
 
     pub fn write(self: *ValueArray, value: Value) !void {
-        try self.values.append(value);
+        try self.values.append(self.allocator, value);
     }
 };

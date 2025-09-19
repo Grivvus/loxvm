@@ -53,20 +53,26 @@ pub const Chunk = struct {
     code: ArrayList(u8),
     lines: ArrayList(usize),
     constants: ValueArray,
+    allocator: Allocator,
 
     pub fn init(allocator: Allocator) Chunk {
-        return Chunk{ .code = ArrayList(u8).init(allocator), .lines = ArrayList(usize).init(allocator), .constants = ValueArray.init(allocator) };
+        return Chunk{
+            .code = ArrayList(u8).initCapacity(allocator, 0) catch @panic("Out of memory"),
+            .lines = ArrayList(usize).initCapacity(allocator, 0) catch @panic("Out of memory"),
+            .constants = ValueArray.init(allocator),
+            .allocator = allocator,
+        };
     }
 
     pub fn deinit(self: *Chunk) void {
-        self.code.deinit();
-        self.lines.deinit();
+        self.code.deinit(self.allocator);
+        self.lines.deinit(self.allocator);
         self.constants.deinit();
     }
 
     pub fn write(self: *Chunk, opcode: u8, line: usize) !void {
-        try self.code.append(opcode);
-        try self.lines.append(line);
+        try self.code.append(self.allocator, opcode);
+        try self.lines.append(self.allocator, line);
     }
 
     pub fn addConstant(self: *Chunk, vm: *VM, value: Value) !usize {

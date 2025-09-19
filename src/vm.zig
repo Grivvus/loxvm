@@ -87,7 +87,7 @@ pub const VM = struct {
             .frames = try allocator.alloc(CallFrame, FRAMES_MAX),
             .stack = undefined,
             .globals = Table.init(allocator),
-            .gray_stack = ArrayList(*Object).init(allocator),
+            .gray_stack = try ArrayList(*Object).initCapacity(allocator, 1024),
             .arena_alloc = allocator,
             .gpa = gpa,
             .obj_alloc = gpa.allocator(),
@@ -109,7 +109,7 @@ pub const VM = struct {
 
         self.globals.clearRetainingCapacity();
         self.globals.deinit();
-        self.gray_stack.deinit();
+        self.gray_stack.deinit(self.arena_alloc);
         const leaked = self.gpa.deinit();
         if (leaked == .leak) {
             std.log.err("Memory leak detected in object allocator", .{});

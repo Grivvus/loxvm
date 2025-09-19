@@ -29,7 +29,7 @@ pub fn main() !void {
 }
 
 fn repl(vm: *VM) !void {
-    const stdin = std.io.getStdIn();
+    const stdin = std.fs.File.stdin();
     var line_buffer: [1024]u8 = undefined;
     while (true) {
         std.debug.print("> ", .{});

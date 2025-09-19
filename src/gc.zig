@@ -77,7 +77,7 @@ pub fn markObject(vm: *VM, object: *Object) void {
         std.debug.print("\n", .{});
     }
     object.is_marked = true;
-    vm.gray_stack.append(object) catch {
+    vm.gray_stack.append(vm.arena_alloc, object) catch {
         @panic("Allocation error");
     };
 }

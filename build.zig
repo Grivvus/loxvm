@@ -18,9 +18,11 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(exe);
     const exe_check = b.addExecutable(.{
         .name = "exe_check",
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     const check = b.step("check", "Check if foo compiles");
     check.dependOn(&exe_check.step);
