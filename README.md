@@ -5,7 +5,7 @@
 
 ## build&run
 
-supports latest zig stable release
+supports latest zig stable release (0.15 at the moment)
 
 ```bash
 zig build && zig-out/bin/loxvm filename.lox # to run debug version
@@ -26,6 +26,7 @@ zig build -Doptimize=ReleaseFast && zig-out/bin/loxvm filename.lox # to run opti
 
 
 ## the book is finished
+
 
 
 
