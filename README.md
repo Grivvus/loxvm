@@ -3,6 +3,8 @@
 
 [crafting interpreters book](https://www.craftinginterpreters.com/a-bytecode-virtual-machine.html)
 
+[my tree-walk implementation - golox](https://github.com/Grivvus/golox)
+
 ## build&run
 
 supports latest zig stable release (0.15 at the moment)
