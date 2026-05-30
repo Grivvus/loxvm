@@ -31,11 +31,17 @@ fn repl(vm: *VM) !void {
     var line_buffer: [1024]u8 = undefined;
     while (true) {
         std.debug.print("> ", .{});
-        var stdin_reader = stdin.reader(vm.io, &line_buffer).interface;
-        _ = stdin_reader.peekSentinel('\n') catch @panic("Buffer out");
-        std.debug.print("{s}\n", .{line_buffer});
+        var stdin_reader = stdin.reader(vm.io, &line_buffer);
+        const reader = &stdin_reader.interface;
+        var read = reader.takeSentinel('\n') catch @panic("Buffer out");
+        std.debug.print("{s}", .{read});
         std.debug.print("\n", .{});
-        const result = try vm.interpret(&line_buffer);
+
+        // somehow scanner doesn't see ';' if i read code from REPL
+        read[read.len] = ';';
+        read.len += 1;
+
+        const result = try vm.interpret(read);
         if (result != .INTERPRET_OK) {
             std.debug.print("Interpreter error\n", .{});
             @panic("");
