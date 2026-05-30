@@ -8,32 +8,31 @@ const VM = @import("vm.zig").VM;
 const Chunk = bytecode.Chunk;
 const OpCodes = bytecode.OpCode;
 
-pub fn main() !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const arena_alloc = arena.allocator();
+pub fn main(init: std.process.Init) !void {
+    var arena = init.arena;
 
-    const args = try std.process.argsAlloc(arena_alloc);
-    defer std.process.argsFree(arena_alloc, args);
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
 
-    var vm = try VM.init(arena_alloc);
+    var vm = try VM.init(arena.allocator(), init.gpa, init.io);
     defer vm.deinit();
     if (args.len == 1) {
         try repl(&vm);
     } else if (args.len == 2) {
-        try runFile(&vm, args[1], arena_alloc);
+        try runFile(&vm, args[1], arena.allocator());
     } else {
-        std.debug.print("Usage: clox [path]\n", .{});
+        try std.Io.File.stdout()
+            .writeStreamingAll(init.io, "Usage: clox [path]\n");
         @panic("\n");
     }
 }
 
 fn repl(vm: *VM) !void {
-    const stdin = std.fs.File.stdin();
+    const stdin = std.Io.File.stdin();
     var line_buffer: [1024]u8 = undefined;
     while (true) {
         std.debug.print("> ", .{});
-        _ = stdin.readAll(&line_buffer) catch @panic("Buffer out");
+        var stdin_reader = stdin.reader(vm.io, &line_buffer).interface;
+        _ = stdin_reader.peekSentinel('\n') catch @panic("Buffer out");
         std.debug.print("{s}\n", .{line_buffer});
         std.debug.print("\n", .{});
         const result = try vm.interpret(&line_buffer);
@@ -45,9 +44,13 @@ fn repl(vm: *VM) !void {
 }
 
 fn runFile(vm: *VM, filename: []const u8, allocator: Allocator) !void {
-    const file = try std.fs.cwd().openFile(filename, .{});
-    defer file.close();
-    const source = try file.readToEndAlloc(allocator, 100_000);
+    const cwd = std.Io.Dir.cwd();
+    const file = try cwd.openFile(vm.io, filename, .{});
+    defer file.close(vm.io);
+    var file_reader = file.reader(vm.io, &.{});
+    const reader = &file_reader.interface;
+    const fstat = try file.stat(vm.io);
+    const source = try reader.readAlloc(allocator, fstat.size);
     if (builtin.mode == .Debug) {
         std.debug.print("{s}", .{source});
     }

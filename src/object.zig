@@ -20,7 +20,7 @@ pub const ObjType = enum {
     OBJ_BOUND_METHOD,
 };
 
-pub const NativeFn = *const (fn (argc: usize, args: []Value) Value);
+pub const NativeFn = *const (fn (io: std.Io, argc: usize, args: []Value) Value);
 
 pub const Object = struct {
     type_: ObjType,

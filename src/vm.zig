@@ -30,10 +30,10 @@ const FRAMES_MAX = 64;
 const STACK_MAX_SIZE = FRAMES_MAX * std.math.maxInt(u8);
 const DEBUG_STRESS_GC = gc.DEBUG_STRESS_GC;
 
-fn clockNative(argc: usize, args: []Value) Value {
+fn clockNative(io: std.Io, argc: usize, args: []Value) Value {
     _ = argc;
     _ = args;
-    return Value.initNumber(@floatFromInt(std.time.timestamp()));
+    return Value.initNumber(@floatFromInt(std.Io.Timestamp.now(io, std.Io.Clock.real).toMilliseconds()));
 }
 
 pub const InterpreterError = error{
@@ -77,12 +77,12 @@ pub const VM = struct {
 
     init_str: *ObjString = undefined,
 
+    io: std.Io,
     arena_alloc: Allocator,
     obj_alloc: Allocator,
-    gpa: std.heap.GeneralPurposeAllocator(.{}),
+    gpa: Allocator,
 
-    pub fn init(allocator: Allocator) !VM {
-        var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
+    pub fn init(allocator: Allocator, gpa: Allocator, io: std.Io) !VM {
         var vm = VM{
             .frames = try allocator.alloc(CallFrame, FRAMES_MAX),
             .stack = undefined,
@@ -90,7 +90,8 @@ pub const VM = struct {
             .gray_stack = try ArrayList(*Object).initCapacity(allocator, 1024),
             .arena_alloc = allocator,
             .gpa = gpa,
-            .obj_alloc = gpa.allocator(),
+            .obj_alloc = gpa,
+            .io = io,
         };
         vm.resetStack();
         vm.init_str = ObjString.init(&vm, vm.obj_alloc, "init");
@@ -110,10 +111,6 @@ pub const VM = struct {
         self.globals.clearRetainingCapacity();
         self.globals.deinit();
         self.gray_stack.deinit(self.arena_alloc);
-        const leaked = self.gpa.deinit();
-        if (leaked == .leak) {
-            std.log.err("Memory leak detected in object allocator", .{});
-        }
     }
     fn peek(self: *VM, offset: usize) Value {
         return self.stack[self.stack_top_index - 1 - offset];
@@ -129,6 +126,7 @@ pub const VM = struct {
                 ObjType.OBJ_NATIVE => {
                     const native_fn = obj.as(ObjNative).function;
                     const result = native_fn(
+                        self.io,
                         arg_count,
                         self.stack[self.stack_top_index - arg_count .. self.stack_top_index],
                     );
@@ -245,7 +243,7 @@ pub const VM = struct {
             source,
             vm,
             vm.arena_alloc,
-            vm.gpa.allocator(),
+            vm.gpa,
         ); // catch return InterpreterResult.INTERPRET_COMPILE_ERROR;
         vm.push(Value.initObject(&function.object));
         const closure = ObjClosure.init(vm, vm.obj_alloc, function);
