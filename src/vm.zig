@@ -257,7 +257,7 @@ pub const VM = struct {
     fn run(vm: *VM) !InterpreterResult {
         var frame: *CallFrame = &vm.frames[vm.frame_count - 1];
         while (true) {
-            if (build_mode == .Debug) {
+            if (build_mode == .debug) {
                 std.debug.print("        ", .{});
                 for (0..vm.stack_top_index) |index| {
                     std.debug.print("[ ", .{});
@@ -276,21 +276,21 @@ pub const VM = struct {
             }
             const instruction = readByte(vm);
             switch (instruction) {
-                @intFromEnum(OpCode.OP_JUMP) => {
+                @backingInt(OpCode.OP_JUMP) => {
                     const offset = readShort(vm);
                     frame.ip += offset;
                 },
-                @intFromEnum(OpCode.OP_JUMP_IF_FALSE) => {
+                @backingInt(OpCode.OP_JUMP_IF_FALSE) => {
                     const offset = readShort(vm);
                     if (isFalsey(vm.peek(0))) {
                         frame.ip += offset;
                     }
                 },
-                @intFromEnum(OpCode.OP_LOOP) => {
+                @backingInt(OpCode.OP_LOOP) => {
                     const offset = readShort(vm);
                     frame.ip -= offset;
                 },
-                @intFromEnum(OpCode.OP_RETURN) => {
+                @backingInt(OpCode.OP_RETURN) => {
                     const result = pop(vm);
                     vm.closeUpvalue(&frame.slots[frame.slots_start_index]);
                     vm.frame_count -= 1;
@@ -302,26 +302,26 @@ pub const VM = struct {
                     vm.push(result);
                     frame = &vm.frames[vm.frame_count - 1];
                 },
-                @intFromEnum(OpCode.OP_CONSTANT) => {
+                @backingInt(OpCode.OP_CONSTANT) => {
                     const constant = readConstant(vm);
                     vm.push(constant);
                 },
-                @intFromEnum(OpCode.OP_NIL) => {
+                @backingInt(OpCode.OP_NIL) => {
                     vm.push(Value.initNil());
                 },
-                @intFromEnum(OpCode.OP_TRUE) => {
+                @backingInt(OpCode.OP_TRUE) => {
                     vm.push(Value.initBoolean(true));
                 },
-                @intFromEnum(OpCode.OP_FALSE) => {
+                @backingInt(OpCode.OP_FALSE) => {
                     vm.push(Value.initBoolean(false));
                 },
-                @intFromEnum(OpCode.OP_NEGATE) => {
+                @backingInt(OpCode.OP_NEGATE) => {
                     if (!vm.peek(0).isNumber()) {
                         return vm.throw("Operand must be a number");
                     }
                     vm.push(Value.initNumber(-vm.pop().asNumber()));
                 },
-                @intFromEnum(OpCode.OP_ADD) => {
+                @backingInt(OpCode.OP_ADD) => {
                     if (vm.peek(0).isObject() and vm.peek(0).asObject().isObjString() and vm.peek(1).isObject() and vm.peek(1).asObject().isObjString()) {
                         try vm.concat();
                     } else if (vm.peek(0).isNumber() and vm.peek(1).isNumber()) {
@@ -334,61 +334,61 @@ pub const VM = struct {
                         return vm.throw("Operands must be a two number or two strings");
                     }
                 },
-                @intFromEnum(OpCode.OP_SUBSTRUCT) => {
+                @backingInt(OpCode.OP_SUBSTRUCT) => {
                     const res = try vm.binOp(BinOp.MINUS);
                     switch (res) {
                         .INTERPRET_RUNTIME_ERROR => return InterpreterResult.INTERPRET_RUNTIME_ERROR,
                         else => {},
                     }
                 },
-                @intFromEnum(OpCode.OP_MULTIPLY) => {
+                @backingInt(OpCode.OP_MULTIPLY) => {
                     const res = try vm.binOp(BinOp.MULTIPLY);
                     switch (res) {
                         .INTERPRET_RUNTIME_ERROR => return InterpreterResult.INTERPRET_RUNTIME_ERROR,
                         else => {},
                     }
                 },
-                @intFromEnum(OpCode.OP_DIVIDE) => {
+                @backingInt(OpCode.OP_DIVIDE) => {
                     const res = try vm.binOp(BinOp.DIVIDE);
                     switch (res) {
                         .INTERPRET_RUNTIME_ERROR => return InterpreterResult.INTERPRET_RUNTIME_ERROR,
                         else => {},
                     }
                 },
-                @intFromEnum(OpCode.OP_NOT) => vm.push(Value.initBoolean(isFalsey(vm.pop()))),
-                @intFromEnum(OpCode.OP_EQUAL) => {
+                @backingInt(OpCode.OP_NOT) => vm.push(Value.initBoolean(isFalsey(vm.pop()))),
+                @backingInt(OpCode.OP_EQUAL) => {
                     const v2 = vm.pop();
                     const v1 = vm.pop();
                     const res = Value.isEqual(v1, v2);
                     vm.push(Value.initBoolean(res));
                 },
-                @intFromEnum(OpCode.OP_GREATER) => {
+                @backingInt(OpCode.OP_GREATER) => {
                     const res = try vm.binOp(BinOp.GREATER);
                     switch (res) {
                         .INTERPRET_RUNTIME_ERROR => return InterpreterResult.INTERPRET_RUNTIME_ERROR,
                         else => {},
                     }
                 },
-                @intFromEnum(OpCode.OP_LESS) => {
+                @backingInt(OpCode.OP_LESS) => {
                     const res = try vm.binOp(BinOp.LESS);
                     switch (res) {
                         .INTERPRET_RUNTIME_ERROR => return InterpreterResult.INTERPRET_RUNTIME_ERROR,
                         else => {},
                     }
                 },
-                @intFromEnum(OpCode.OP_PRINT) => {
+                @backingInt(OpCode.OP_PRINT) => {
                     vm.pop().printValue();
                     std.debug.print("\n", .{});
                 },
-                @intFromEnum(OpCode.OP_POP) => {
+                @backingInt(OpCode.OP_POP) => {
                     _ = vm.pop();
                 },
-                @intFromEnum(OpCode.OP_DEFINE_GLOBAL) => {
+                @backingInt(OpCode.OP_DEFINE_GLOBAL) => {
                     const name = readConstant(vm).asObject().as(ObjString);
                     try vm.globals.put(name, peek(vm, 0));
                     _ = pop(vm);
                 },
-                @intFromEnum(OpCode.OP_GET_GLOBAL) => {
+                @backingInt(OpCode.OP_GET_GLOBAL) => {
                     const name = readConstant(vm).asObject().as(ObjString);
                     const value = vm.globals.get(name);
                     if (value == null) {
@@ -396,30 +396,30 @@ pub const VM = struct {
                     }
                     vm.push(value.?);
                 },
-                @intFromEnum(OpCode.OP_SET_GLOBAL) => {
+                @backingInt(OpCode.OP_SET_GLOBAL) => {
                     const name = readConstant(vm).asObject().as(ObjString);
                     if (!vm.globals.contains(name)) {
                         return throw(vm, try std.fmt.allocPrint(vm.arena_alloc, "Undefined variable '{s}'", .{name.str}));
                     }
                     try vm.globals.put(name, vm.peek(0));
                 },
-                @intFromEnum(OpCode.OP_GET_LOCAL) => {
+                @backingInt(OpCode.OP_GET_LOCAL) => {
                     const slot = readByte(vm);
                     vm.push(frame.slots[slot + frame.slots_start_index]);
                 },
-                @intFromEnum(OpCode.OP_SET_LOCAL) => {
+                @backingInt(OpCode.OP_SET_LOCAL) => {
                     const slot = readByte(vm);
                     frame.slots[slot + frame.slots_start_index] = vm.peek(0);
                 },
-                @intFromEnum(OpCode.OP_GET_UPVALUE) => {
+                @backingInt(OpCode.OP_GET_UPVALUE) => {
                     const slot = readByte(vm);
                     vm.push(frame.closure.upvalues[slot].location.*);
                 },
-                @intFromEnum(OpCode.OP_SET_UPVALUE) => {
+                @backingInt(OpCode.OP_SET_UPVALUE) => {
                     const slot = readByte(vm);
                     frame.closure.upvalues[slot].location.* = vm.peek(0);
                 },
-                @intFromEnum(OpCode.OP_GET_PROPERTY) => {
+                @backingInt(OpCode.OP_GET_PROPERTY) => {
                     if (!vm.peek(0).asObject().isObjInstance()) {
                         return vm.throw("Only instances have properties");
                     }
@@ -434,7 +434,7 @@ pub const VM = struct {
                         }
                     }
                 },
-                @intFromEnum(OpCode.OP_SET_PROPERTY) => {
+                @backingInt(OpCode.OP_SET_PROPERTY) => {
                     const instance = vm.peek(1).asObject().as(ObjInstance);
                     const value = vm.peek(0);
                     const name = readConstant(vm).asObject().as(ObjString);
@@ -443,7 +443,7 @@ pub const VM = struct {
                     _ = vm.pop();
                     vm.push(poped_value);
                 },
-                @intFromEnum(OpCode.OP_CALL) => {
+                @backingInt(OpCode.OP_CALL) => {
                     const arg_count = readByte(vm);
                     const callee = vm.peek(arg_count);
                     if (!(try callValue(vm, callee, arg_count))) {
@@ -451,7 +451,7 @@ pub const VM = struct {
                     }
                     frame = &vm.frames[vm.frame_count - 1];
                 },
-                @intFromEnum(OpCode.OP_CLOSURE) => {
+                @backingInt(OpCode.OP_CLOSURE) => {
                     const function = readConstant(vm).asObject().as(ObjFunction);
                     const closure = Value.initObject(&ObjClosure.init(vm, vm.obj_alloc, function).object);
                     const obj_closure = closure.asObject().as(ObjClosure);
@@ -470,11 +470,11 @@ pub const VM = struct {
 
                     vm.push(closure);
                 },
-                @intFromEnum(OpCode.OP_CLOSE_UPVALUE) => {
+                @backingInt(OpCode.OP_CLOSE_UPVALUE) => {
                     vm.closeUpvalue(&vm.stack[vm.stack_top_index - 1]);
                     _ = vm.pop();
                 },
-                @intFromEnum(OpCode.OP_CLASS) => {
+                @backingInt(OpCode.OP_CLASS) => {
                     const class = ObjClass.init(
                         vm,
                         vm.obj_alloc,
@@ -482,10 +482,10 @@ pub const VM = struct {
                     );
                     vm.push(Value.initObject(&class.object));
                 },
-                @intFromEnum(OpCode.OP_METHOD) => {
+                @backingInt(OpCode.OP_METHOD) => {
                     try defineMethod(vm, readConstant(vm).asObject().as(ObjString));
                 },
-                @intFromEnum(OpCode.OP_INVOKE) => {
+                @backingInt(OpCode.OP_INVOKE) => {
                     const method = readConstant(vm).asObject().as(ObjString);
                     const arg_cnt = readByte(vm);
                     if (!try invoke(vm, method, arg_cnt)) {
@@ -493,7 +493,7 @@ pub const VM = struct {
                     }
                     frame = &vm.frames[vm.frame_count - 1];
                 },
-                @intFromEnum(OpCode.OP_SUPER_INVOKE) => {
+                @backingInt(OpCode.OP_SUPER_INVOKE) => {
                     const method = readConstant(vm).asObject().as(ObjString);
                     const arg_cnt = readByte(vm);
                     const superclass = vm.pop().asObject().as(ObjClass);
@@ -502,7 +502,7 @@ pub const VM = struct {
                     }
                     frame = &vm.frames[vm.frame_count - 1];
                 },
-                @intFromEnum(OpCode.OP_INHERIT) => {
+                @backingInt(OpCode.OP_INHERIT) => {
                     if (!vm.peek(1).asObject().isObjClass()) {
                         return vm.throw("Can't inherit not from a class");
                     }
@@ -514,7 +514,7 @@ pub const VM = struct {
                     }
                     _ = vm.pop();
                 },
-                @intFromEnum(OpCode.OP_GET_SUPER) => {
+                @backingInt(OpCode.OP_GET_SUPER) => {
                     const name = readConstant(vm).asObject().as(ObjString);
                     const superclass = vm.pop().asObject().as(ObjClass);
                     if (!try bindMethod(vm, superclass, name)) {

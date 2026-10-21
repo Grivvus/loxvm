@@ -27,7 +27,7 @@ pub const Object = struct {
     is_marked: bool = false,
     next: ?*Object,
     pub fn deinit(self: *Object) usize {
-        if (build_mode == .Debug) {
+        if (build_mode == .debug) {
             std.debug.print("{x} deleting ", .{@intFromPtr(self)});
             Value.initObject(self).printValue();
             std.debug.print("\n", .{});
@@ -127,7 +127,7 @@ pub const ObjString = struct {
     }
     pub fn deinit(self: *ObjString) usize {
         const freed = self.str.len + @sizeOf(ObjString);
-        if (build_mode == .Debug) {
+        if (build_mode == .debug) {
             for (self.str) |elem| {
                 std.debug.print("{d} ", .{elem});
             }

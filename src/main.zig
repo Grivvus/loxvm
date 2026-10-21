@@ -57,7 +57,7 @@ fn runFile(vm: *VM, filename: []const u8, allocator: Allocator) !void {
     const reader = &file_reader.interface;
     const fstat = try file.stat(vm.io);
     const source = try reader.readAlloc(allocator, fstat.size);
-    if (builtin.mode == .Debug) {
+    if (builtin.mode == .debug) {
         std.debug.print("{s}", .{source});
     }
     const result = try vm.interpret(source);

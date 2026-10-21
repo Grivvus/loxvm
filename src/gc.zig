@@ -20,11 +20,11 @@ const ObjInstance = object_mod.ObjInstance;
 const ObjBoundMethod = object_mod.ObjBoundMethod;
 const markCompilerRoots = compiler_mod.markCompilerRoots;
 
-pub const DEBUG_STRESS_GC = ((build_mode == .Debug) and false);
+pub const DEBUG_STRESS_GC = ((build_mode == .debug) and false);
 const GC_HEAP_GROW_FACTOR = if (DEBUG_STRESS_GC) 1 else 2;
 
 pub fn collectGarbage(vm: *VM) void {
-    if (build_mode == .Debug) {
+    if (build_mode == .debug) {
         std.debug.print("-- gc begin\n", .{});
     }
 
@@ -34,7 +34,7 @@ pub fn collectGarbage(vm: *VM) void {
 
     vm.next_gc *= GC_HEAP_GROW_FACTOR;
 
-    if (build_mode == .Debug) {
+    if (build_mode == .debug) {
         std.debug.print("-- gc end\n", .{});
     }
 }
@@ -71,7 +71,7 @@ pub fn markObject(vm: *VM, object: *Object) void {
     if (object.is_marked) {
         return;
     }
-    if (build_mode == .Debug) {
+    if (build_mode == .debug) {
         std.debug.print("{x} mark ", .{@intFromPtr(object)});
         Value.initObject(object).printValue();
         std.debug.print("\n", .{});
@@ -103,7 +103,7 @@ fn traceReference(vm: *VM) void {
 }
 
 fn blackenObject(vm: *VM, object: *Object) void {
-    if (build_mode == .Debug) {
+    if (build_mode == .debug) {
         std.debug.print("{x} blacken ", .{@intFromPtr(object)});
         Value.initObject(object).printValue();
         std.debug.print("\n", .{});
